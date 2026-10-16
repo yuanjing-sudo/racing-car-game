@@ -13,20 +13,23 @@ export const TRACK_THEMES = [
 export function createTrack(theme = 'alpine', seed = 42) {
   const noise = createNoise2D(seed);
   const trackGroup = new THREE.Group();
-  const trackData = { checkpoints: [], sectors: [], length: 0, theme };
+  const trackData = { checkpoints: [], sectors: [], length: 0, theme, noise, gapZones: [] };
 
-  const numPoints = 120;
+  const numPoints = 140;
   const points = [];
   const trackWidth = 14 + randomRange(-2, 2);
+  const elevation = getTrackElevationFactor(theme) * 1.6;
 
   for (let i = 0; i < numPoints; i++) {
-    const angle = (i / numPoints) * Math.PI * 2;
-    const baseRadius = 120 + fbm(noise, i * 0.02, 0) * 80;
-    const r = baseRadius + Math.sin(angle * 3) * 30 + Math.cos(angle * 5) * 15;
+    const baseAngle = (i / numPoints) * Math.PI * 2;
+    const wobble = Math.sin(i * 0.7) * 0.15 + Math.cos(i * 1.3) * 0.1;
+    const angle = baseAngle + wobble;
+    const baseRadius = 110 + fbm(noise, i * 0.025, 0) * 90 + Math.sin(i * 0.5) * 20;
+    const r = baseRadius + Math.sin(angle * 3) * 25 + Math.cos(angle * 5) * 12;
 
     const x = Math.cos(angle) * r;
     const z = Math.sin(angle) * r;
-    const y = getTerrainHeight(x, z, theme, noise) * getTrackElevationFactor(theme);
+    const y = getTerrainHeight(x, z, theme, noise) * elevation;
 
     points.push(new THREE.Vector3(x, y, z));
   }
@@ -35,42 +38,130 @@ export function createTrack(theme = 'alpine', seed = 42) {
   trackData.curve = curve;
   trackData.length = curve.getLength();
 
-  const divisions = 600;
+  const divisions = 520;
   const trackPoints = curve.getSpacedPoints(divisions);
   trackData.trackPoints = trackPoints;
 
-  const roadShape = new THREE.Shape();
-  const halfWidth = trackWidth / 2;
-  roadShape.moveTo(-halfWidth, 0);
-  roadShape.lineTo(halfWidth, 0);
+  const gapZones = [];
+  const numGaps = theme === 'city' ? 0 : 3;
+  for (let g = 0; g < numGaps; g++) {
+    const tStart = 0.12 + g * 0.28 + randomRange(-0.02, 0.02);
+    const tEnd = Math.min(tStart + 0.055, 0.95);
+    gapZones.push({ tStart, tEnd });
+  }
+  trackData.gapZones = gapZones;
 
-  const roadGeo = createTrackGeometry(curve, trackWidth, divisions);
-  const roadMat = getTrackMaterial(theme);
-  const roadMesh = new THREE.Mesh(roadGeo, roadMat);
-  roadMesh.receiveShadow = true;
-  trackGroup.add(roadMesh);
+  const roadSegments = buildTrackSegments(curve, trackWidth, divisions, gapZones, theme);
+  roadSegments.forEach(mesh => {
+    mesh.receiveShadow = true;
+    trackGroup.add(mesh);
+  });
 
-  const curbGeo = createCurbGeometry(curve, trackWidth, divisions, theme);
-  const curbMat = getCurbMaterial(theme);
-  const curbMesh = new THREE.Mesh(curbGeo, curbMat);
-  curbMesh.position.y = 0.02;
-  trackGroup.add(curbMesh);
+  const curbSegments = buildCurbSegments(curve, trackWidth, divisions, gapZones, theme);
+  curbSegments.forEach(mesh => { mesh.position.y = 0.02; trackGroup.add(mesh); });
 
-  const edgeGeo = createEdgeGeometry(curve, trackWidth, divisions);
-  const edgeMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.9 });
-  const edgeMesh = new THREE.Mesh(edgeGeo, edgeMat);
-  edgeMesh.position.y = -0.01;
-  trackGroup.add(edgeMesh);
+  const edgeSegments = buildEdgeSegments(curve, trackWidth, divisions, gapZones);
+  edgeSegments.forEach(mesh => { mesh.position.y = -0.01; trackGroup.add(mesh); });
 
-  createBarriers(trackGroup, curve, trackWidth, divisions, theme);
+  createBarriers(trackGroup, curve, trackWidth, divisions, theme, gapZones);
   createStartFinish(trackGroup, curve, trackWidth, theme);
-  createTrackDecorations(trackGroup, curve, trackWidth, theme, seed);
+  createTrackDecorations(trackGroup, curve, trackWidth, theme, seed, gapZones);
   createCheckpoints(trackData, curve, theme);
 
   trackData.group = trackGroup;
   trackData.width = trackWidth;
 
   return trackData;
+}
+
+function segmentRanges(divisions, gapZones) {
+  const ranges = [];
+  let lastEnd = 0;
+  const sorted = [...gapZones].sort((a, b) => a.tStart - b.tStart);
+  for (const gz of sorted) {
+    if (gz.tStart > lastEnd + 0.005) ranges.push([lastEnd, gz.tStart]);
+    lastEnd = Math.max(lastEnd, gz.tEnd);
+  }
+  if (lastEnd < 0.995) ranges.push([lastEnd, 1]);
+  return ranges;
+}
+
+function buildTrackSegments(curve, width, divisions, gapZones, theme) {
+  const meshes = [];
+  for (const [t0, t1] of segmentRanges(divisions, gapZones)) {
+    meshes.push(createTrackMesh(curve, t0, t1, width, divisions, theme));
+  }
+  return meshes;
+}
+
+function createTrackMesh(curve, t0, t1, width, divisions, theme) {
+  const segDivisions = Math.max(2, Math.floor(divisions * (t1 - t0)));
+  const shape = new THREE.Shape();
+  const halfW = width / 2;
+  shape.moveTo(-halfW, 0);
+  shape.lineTo(halfW, 0);
+  const geo = new THREE.ExtrudeGeometry(shape, { steps: segDivisions, bevelEnabled: false });
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const idx = Math.floor(i / 2);
+    const rawT = t0 + (t1 - t0) * (idx / Math.max(1, segDivisions - 1));
+    const t = isFinite(rawT) ? clamp(rawT, 0, 1) : 0;
+    const pt = curve.getPointAt(t) || new THREE.Vector3();
+    const tangent = curve.getTangentAt(t) || new THREE.Vector3(0, 0, 1);
+    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+    const isLeft = i % 2 === 0;
+    const offset = isLeft ? -halfW : halfW;
+    pos.setXYZ(i, pt.x + normal.x * offset, pt.y, pt.z + normal.z * offset);
+  }
+  geo.computeVertexNormals();
+  return new THREE.Mesh(geo, getTrackMaterial(theme));
+}
+
+function buildCurbSegments(curve, width, divisions, gapZones, theme) {
+  const meshes = [];
+  const curbWidth = 1.0;
+  for (const [t0, t1] of segmentRanges(divisions, gapZones)) {
+    const segDivisions = Math.max(2, Math.floor(divisions * (t1 - t0)));
+    const geo = new THREE.PlaneGeometry(curbWidth, 1, 1, segDivisions);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const idx = Math.floor(i / 2);
+      const rawT = t0 + (t1 - t0) * (idx / Math.max(1, segDivisions - 1));
+      const t = isFinite(rawT) ? clamp(rawT, 0, 1) : 0;
+      const pt = curve.getPointAt(t) || new THREE.Vector3();
+      const tangent = curve.getTangentAt(t) || new THREE.Vector3(0, 0, 1);
+      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+      const isTop = i % 2 === 0;
+      const offset = isTop ? -(width / 2 + curbWidth / 2) : -(width / 2 - curbWidth / 2);
+      pos.setXYZ(i, pt.x + normal.x * offset, pt.y + 0.03, pt.z + normal.z * offset);
+    }
+    geo.computeVertexNormals();
+    meshes.push(new THREE.Mesh(geo, getCurbMaterial(theme)));
+  }
+  return meshes;
+}
+
+function buildEdgeSegments(curve, width, divisions, gapZones) {
+  const meshes = [];
+  const edgeWidth = 0.5;
+  for (const [t0, t1] of segmentRanges(divisions, gapZones)) {
+    const segDivisions = Math.max(2, Math.floor(divisions * (t1 - t0)));
+    const geo = new THREE.PlaneGeometry(edgeWidth * 2, 1, 1, segDivisions);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const idx = Math.floor(i / 2);
+      const rawT = t0 + (t1 - t0) * (idx / Math.max(1, segDivisions - 1));
+      const t = isFinite(rawT) ? clamp(rawT, 0, 1) : 0;
+      const pt = curve.getPointAt(t) || new THREE.Vector3();
+      const tangent = curve.getTangentAt(t) || new THREE.Vector3(0, 0, 1);
+      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+      const offset = width / 2 + edgeWidth / 2;
+      pos.setXYZ(i, pt.x + normal.x * offset, pt.y + 0.01, pt.z + normal.z * offset);
+    }
+    geo.computeVertexNormals();
+    meshes.push(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.9 })));
+  }
+  return meshes;
 }
 
 function getTrackElevationFactor(theme) {
@@ -185,7 +276,7 @@ function createEdgeGeometry(curve, width, divisions) {
   return geo;
 }
 
-function createBarriers(group, curve, width, divisions, theme) {
+function createBarriers(group, curve, width, divisions, theme, gapZones) {
   const barrierHeight = 0.8;
   const halfW = width / 2 + 1.5;
 
@@ -196,8 +287,11 @@ function createBarriers(group, curve, width, divisions, theme) {
 
   const step = 4;
   for (let i = 0; i < divisions; i += step) {
-    const pt = curve.getPointAt(i / divisions);
-    const tangent = curve.getTangentAt(i / divisions);
+    const t = i / divisions;
+    if (isInGapZone(t, gapZones)) continue;
+
+    const pt = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t);
     const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
     const angle = Math.atan2(tangent.x, tangent.z);
@@ -281,11 +375,13 @@ function createStartFinish(group, curve, width, theme) {
   group.add(bannerMesh);
 }
 
-function createTrackDecorations(group, curve, width, theme, seed) {
+function createTrackDecorations(group, curve, width, theme, seed, gapZones) {
   const rng = mulberry32(seed);
 
   for (let i = 0; i < 80; i++) {
     const t = rng();
+    if (isInGapZone(t, gapZones)) continue;
+
     const pt = curve.getPointAt(t);
     const tangent = curve.getTangentAt(t);
     const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
@@ -446,4 +542,11 @@ function mulberry32(seed) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+function isInGapZone(t, gapZones) {
+  for (const gz of gapZones) {
+    if (t >= gz.tStart && t <= gz.tEnd) return true;
+  }
+  return false;
 }

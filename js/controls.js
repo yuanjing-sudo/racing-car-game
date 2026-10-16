@@ -16,6 +16,12 @@ export class InputManager {
     this.rToggle = false;
     this.gearUp = false;
     this.gearDown = false;
+    this.freeLookToggle = false;
+    this.freeLook = false;
+    this.lookDrag = false;
+    this.lookX = 0;
+    this.lookY = 0;
+    this.lookSensitivity = 0.002;
 
     this.steerSensitivity = 1.0;
     this.throttleSensitivity = 1.0;
@@ -40,6 +46,7 @@ export class InputManager {
       if (e.code === 'KeyR') this.rToggle = true;
       if (e.code === 'KeyE') this.gearUp = true;
       if (e.code === 'KeyQ') this.gearDown = true;
+      if (e.code === 'KeyV') this.freeLookToggle = true;
     });
 
     window.addEventListener('keyup', (e) => {
@@ -61,10 +68,12 @@ export class InputManager {
 
     window.addEventListener('mousedown', (e) => {
       if (e.button === 0) this.touch.active = true;
+      if (e.button === 2) this.lookDrag = true;
     });
 
     window.addEventListener('mouseup', (e) => {
       if (e.button === 0) this.touch.active = false;
+      if (e.button === 2) this.lookDrag = false;
     });
   }
 
@@ -162,7 +171,23 @@ export class InputManager {
         if (rawBrake > 0.1) targetBrake = rawBrake;
 
         if (gp.buttons[0] && gp.buttons[0].pressed) targetHandbrake = true;
+
+        const rx = gp.axes[2] || 0;
+        const ry = gp.axes[3] || 0;
+        if (Math.abs(rx) > this.deadZone) this.lookX += rx * this.lookSensitivity * 60;
+        if (Math.abs(ry) > this.deadZone) this.lookY += ry * this.lookSensitivity * 60;
       }
+    }
+
+    if (this.lookDrag) {
+      this.lookX += this.mouse.dx * this.lookSensitivity;
+      this.lookY += this.mouse.dy * this.lookSensitivity;
+    }
+
+    this.lookY = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, this.lookY));
+
+    if (this.freeLookToggle) {
+      this.freeLook = !this.freeLook;
     }
 
     if (this.touch.active) {
@@ -188,6 +213,7 @@ export class InputManager {
     this.rToggle = this.rToggle && false;
     this.gearUp = this.gearUp && false;
     this.gearDown = this.gearDown && false;
+    this.freeLookToggle = this.freeLookToggle && false;
   }
 
   consumeCameraToggle() {
@@ -229,11 +255,20 @@ export class InputManager {
     };
   }
 
+  getLook() {
+    return { x: this.lookX, y: this.lookY, freeLook: this.freeLook };
+  }
+
+  isFreeLook() {
+    return this.freeLook;
+  }
+
   reset() {
     this.steering = 0;
     this.throttle = 0;
     this.brake = 0;
     this.handbrake = false;
+    this.lookDrag = false;
     this.keys = {};
   }
 }

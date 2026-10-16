@@ -365,6 +365,7 @@ export function createCarModel(config = {}) {
 
   car.userData.config = { paintColor, wheelStyle, spoilerType, rimColor, windowTint };
   car.userData.materials = { paintMat, chromeMat, glassMat, tireMat, rimMat, carbonMat };
+  car.userData.nitro = { active: false, timer: 0, cooldown: 0 };
 
   return car;
 }

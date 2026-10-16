@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createCarModel, CAR_PAINT_COLORS } from './car.js';
 import { createDefaultPhysics } from './physics.js';
-import { createTrack, TRACK_THEMES } from './track.js';
+import { createTrack, TRACK_THEMES, getTerrainHeight } from './track.js';
 import { createScenery } from './scenery.js';
 import { createScene, createCamera, createRenderer } from './environment.js';
 import { createPostFX, updatePostFXSize, setBloomIntensity } from './postfx.js';
@@ -55,6 +55,7 @@ class Game {
       rimColor: 0xcccccc,
       windowTint: 0.3,
     };
+    this.nitro = { active: false, timer: 0, cooldown: 0 };
     this.lapData = { checkpoints: [], bestLap: null, lastLap: null };
     this.collisionCooldown = 0;
     this.offTrackTimer = 0;
@@ -201,6 +202,9 @@ class Game {
     if (e.code === 'KeyH') {
       this.hud.toggle();
     }
+    if (e.code === 'KeyN' && (this.gameMode === 'racing' || this.gameMode === 'freeroam') && !this.isPaused) {
+      this.activateNitro();
+    }
   }
 
   onKeyUp(e) {}
@@ -216,6 +220,7 @@ class Game {
     this.updateLoader(10, 'Generating track...');
     const seed = Math.floor(Math.random() * 10000);
     this.trackData = createTrack(settings.track, seed);
+    this.playerPhysics.setGroundHeightGetter((x, z) => this.getGroundHeight(x, z));
 
     this.updateLoader(30, 'Creating scenery...');
     this.scenery = createScenery(settings.track, seed, this.trackData.curve);
@@ -253,6 +258,7 @@ class Game {
 
     const seed = Math.floor(Math.random() * 10000);
     this.trackData = createTrack(settings.track || 'countryside', seed);
+    this.playerPhysics.setGroundHeightGetter((x, z) => this.getGroundHeight(x, z));
     this.scenery = createScenery(settings.track || 'countryside', seed, this.trackData.curve);
     this.scene.add(this.scenery);
 
@@ -307,6 +313,24 @@ class Game {
     const pos = pt.clone().add(normal.clone().multiplyScalar(3 * side));
     pos.add(tangent.clone().multiplyScalar(-row * 5));
     return { position: pos, angle: Math.atan2(tangent.x, tangent.z) };
+  }
+
+  getGroundHeight(x, z) {
+    if (!this.trackData) return 0;
+    const pts = this.trackData.trackPoints;
+    let nearestIdx = 0;
+    let nearestDist = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const d = Math.hypot(x - pts[i].x, z - pts[i].z);
+      if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
+    }
+    const t = nearestIdx / Math.max(1, pts.length - 1);
+    for (const gz of this.trackData.gapZones) {
+      if (t >= gz.tStart && t <= gz.tEnd) return NaN;
+    }
+    const onRoad = nearestDist < (this.trackData.width / 2 + 4);
+    if (onRoad) return pts[nearestIdx].y;
+    return getTerrainHeight(x, z, this.trackData.theme, this.trackData.noise);
   }
 
   startRenderLoop() {
@@ -364,6 +388,21 @@ class Game {
     const prevSpeed = this.playerPhysics.speed;
     const result = this.playerPhysics.update(dt, input, 1.0);
 
+    if (this.nitro.active) {
+      this.nitro.timer -= dt;
+      if (this.nitro.timer <= 0) { this.nitro.active = false; this.nitro.timer = 0; }
+      else {
+        const forwardDir = new THREE.Vector3(Math.sin(this.playerPhysics.heading), 0, Math.cos(this.playerPhysics.heading));
+        this.playerPhysics.velocity.add(forwardDir.multiplyScalar(140 * dt));
+      }
+    }
+    if (this.nitro.cooldown > 0) this.nitro.cooldown = Math.max(0, this.nitro.cooldown - dt);
+
+    if (this.playerPhysics.fallen) {
+      this.respawnCar();
+      return;
+    }
+
     const speedDiff = Math.abs(result.speed - prevSpeed);
     if (speedDiff > 20) {
       this.cameraController.addShake(0.3);
@@ -388,6 +427,21 @@ class Game {
 
     const input = this.input.getInput();
     const result = this.playerPhysics.update(dt, input, 1.0);
+
+    if (this.nitro.active) {
+      this.nitro.timer -= dt;
+      if (this.nitro.timer <= 0) { this.nitro.active = false; this.nitro.timer = 0; }
+      else {
+        const forwardDir = new THREE.Vector3(Math.sin(this.playerPhysics.heading), 0, Math.cos(this.playerPhysics.heading));
+        this.playerPhysics.velocity.add(forwardDir.multiplyScalar(140 * dt));
+      }
+    }
+    if (this.nitro.cooldown > 0) this.nitro.cooldown = Math.max(0, this.nitro.cooldown - dt);
+
+    if (this.playerPhysics.fallen) {
+      this.respawnCar();
+      return;
+    }
 
     this.updatePlayerVisuals(dt, result);
     this.updateCamera(dt, result);
@@ -418,6 +472,7 @@ class Game {
   }
 
   updateCamera(dt, physData) {
+    const look = this.input.getLook();
     const carData = {
       position: this.playerPhysics.position,
       heading: this.playerPhysics.heading,
@@ -425,7 +480,11 @@ class Game {
       steering: this.playerPhysics.steerAngle,
       isDrifting: this.playerPhysics.isDrifting,
       velocity: this.playerPhysics.velocity,
+      freeLook: this.input.isFreeLook(),
+      lookX: look.x,
+      lookY: look.y,
     };
+    this.cameraController.setLook(look.x, look.y);
     this.cameraController.update(dt, carData);
   }
 
@@ -467,6 +526,27 @@ class Game {
     const isDrifting = this.playerPhysics.isDrifting;
     const speed = this.playerPhysics.speed;
     const wheels = this.playerCar.userData.wheels;
+    const underglow = this.playerCar.userData.parts.underglow;
+
+    if (this.nitro.active) {
+      const pulse = 1 + Math.sin(this.elapsedTime * 20) * 0.4;
+      if (underglow) {
+        underglow.intensity = 2.5 * pulse;
+        underglow.distance = 6;
+      }
+      this.particles.emitExhaust(
+        new THREE.Vector3(
+          this.playerPhysics.position.x - Math.sin(this.playerPhysics.heading) * 2.3,
+          this.playerPhysics.position.y + 0.3,
+          this.playerPhysics.position.z - Math.cos(this.playerPhysics.heading) * 2.3
+        ),
+        new THREE.Vector3(-Math.sin(this.playerPhysics.heading), 0.15, -Math.cos(this.playerPhysics.heading)),
+        1.0
+      );
+    } else if (underglow) {
+      underglow.intensity = 0.5;
+      underglow.distance = 3;
+    }
 
     if (isDrifting && speed > 5) {
       for (let i = 2; i < 4; i++) {
@@ -489,6 +569,16 @@ class Game {
       -Math.cos(this.playerPhysics.heading)
     );
     this.particles.emitExhaust(exhaustPos, exhaustDir, this.playerPhysics.throttle);
+
+    if (this.playerPhysics.throttle > 0.5 && speed > 10) {
+      for (let i = 2; i < 4; i++) {
+        if (wheels[i] && Math.random() < 0.3) {
+          const wheelPos = new THREE.Vector3();
+          wheels[i].getWorldPosition(wheelPos);
+          this.particles.emitTireSmoke(wheelPos, this.playerPhysics.velocity, 0.5);
+        }
+      }
+    }
   }
 
   updateAI(dt) {
@@ -579,6 +669,29 @@ class Game {
     } else {
       this.offTrackTimer = 0;
     }
+  }
+
+  activateNitro() {
+    const n = this.nitro;
+    if (n.active || n.cooldown > 0) return;
+    n.active = true;
+    n.timer = 3.5;
+    n.cooldown = 8;
+    this.hud.showMessage('NITRO BOOST', 1200);
+    this.cameraController.addShake(0.5);
+    this.audio.playEffect('boost');
+  }
+
+  respawnCar() {
+    if (!this.trackData) return;
+    const grid = this.getGridPosition(0);
+    this.playerPhysics.fallen = false;
+    this.playerPhysics.reset(grid.position, grid.angle);
+    this.playerCar.position.copy(grid.position);
+    this.playerCar.rotation.y = grid.angle;
+    this.playerPhysics.velocity.set(0, 0, 0);
+    this.cameraController.reset(grid.position);
+    this.hud.showMessage('Respawned', 1200);
   }
 
   pauseGame() {

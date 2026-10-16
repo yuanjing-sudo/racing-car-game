@@ -231,6 +231,10 @@ export class AudioManager {
       case 'collision':
         this.playNoiseBurst(0.2, 2000, 0.5 * volume);
         break;
+      case 'boost':
+        this.playTone(700, 0.12, 'square', 0.35 * volume);
+        setTimeout(() => this.playTone(1050, 0.12, 'square', 0.35 * volume), 60);
+        break;
       case 'menu_select':
         this.playTone(1200, 0.05, 'sine', 0.15 * volume);
         break;

@@ -41,6 +41,10 @@ export class VehiclePhysics {
     this.suspensionTravel = [0, 0, 0, 0];
     this.suspensionVelocities = [0, 0, 0, 0];
 
+    this.groundHeightGetter = null;
+    this.isOnGround = true;
+    this.fallen = false;
+
     this.gearRatios = [3.8, 2.2, 1.5, 1.1, 0.85, 0.7];
     this.finalDrive = 3.5;
     this.idleRPM = 800;
@@ -52,6 +56,10 @@ export class VehiclePhysics {
     this.aeroMultiplier = 1.0;
     this.gripMultiplier = 1.0;
     this.damageAmount = 0.0;
+  }
+
+  setGroundHeightGetter(fn) {
+    this.groundHeightGetter = fn;
   }
 
   reset(pos, heading = 0) {
@@ -78,7 +86,16 @@ export class VehiclePhysics {
       if (this.shiftTimer <= 0) {
         this.isShifting = false;
       }
-      return;
+      return {
+        forwardSpeed: this.forwardSpeed,
+        speed: this.speed,
+        latForce: 0,
+        longForce: 0,
+        gForceLat: this.gForceLat,
+        gForceLon: this.gForceLon,
+        isDrifting: this.isDrifting,
+        driftAngle: this.driftAngle,
+      };
     }
 
     const cosH = Math.cos(this.heading);
@@ -197,7 +214,18 @@ export class VehiclePhysics {
     }
 
     this.position.add(this.velocity.clone().multiplyScalar(dt));
-    this.position.y = 0;
+
+    const groundY = this.groundHeightGetter ? this.groundHeightGetter(this.position.x, this.position.z) : 0;
+    if (this.position.y <= groundY + 0.35) {
+      this.position.y = groundY + 0.35;
+      this.velocity.y = 0;
+      this.isOnGround = true;
+      this.fallen = false;
+    } else {
+      this.velocity.y -= 9.81 * dt;
+      this.isOnGround = false;
+      if (this.position.y < -120) this.fallen = true;
+    }
 
     this.gForceLon = accelLon / 9.81;
     this.gForceLat = accelLat / 9.81;

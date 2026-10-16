@@ -16,15 +16,15 @@ export function createPostFX(renderer, scene, camera) {
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(size.x, size.y),
-    0.35,
-    0.6,
-    0.88
+    0.85,
+    0.85,
+    0.75
   );
   composer.addPass(bloomPass);
 
   const vignettePass = new ShaderPass(VignetteShader);
-  vignettePass.uniforms.offset.value = 0.95;
-  vignettePass.uniforms.darkness.value = 1.1;
+  vignettePass.uniforms.offset.value = 0.9;
+  vignettePass.uniforms.darkness.value = 1.35;
   composer.addPass(vignettePass);
 
   const fxaaPass = new ShaderPass(FXAAShader);

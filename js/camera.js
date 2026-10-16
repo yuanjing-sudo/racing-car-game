@@ -17,6 +17,12 @@ export class CameraController {
     this.cinematicPath = [];
     this.orbitAngle = 0;
     this.freeLook = { x: 0, y: 0 };
+    this.lookOffset = { x: 0, y: 0 };
+  }
+
+  setLook(x, y) {
+    this.lookOffset.x = x;
+    this.lookOffset.y = y;
   }
 
   cycle() {
@@ -40,6 +46,25 @@ export class CameraController {
     if (Math.abs(this.camera.fov - this.currentFov) > 0.1) {
       this.camera.fov = this.currentFov;
       this.camera.updateProjectionMatrix();
+    }
+
+    if (carData.freeLook) {
+      const { position } = carData;
+      const dist = 7 + clamp(carData.speed / 70, 0, 1) * 3;
+      const yaw = this.lookOffset.x;
+      const pitch = this.lookOffset.y;
+      const cosP = Math.cos(pitch);
+      const sinP = Math.sin(pitch);
+      const cosY = Math.cos(yaw);
+      const sinY = Math.sin(yaw);
+      this.camera.position.set(
+        position.x + sinY * cosP * dist,
+        position.y + 1.5 + sinP * dist,
+        position.z + cosY * cosP * dist
+      );
+      this.camera.lookAt(position.x, position.y + 0.8, position.z);
+      this.applyShake(dt);
+      return;
     }
 
     switch (this.getMode()) {
