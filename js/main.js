@@ -489,7 +489,7 @@ class Game {
   }
 
   updateRaceLogic(dt, physData) {
-    this.race.update(dt, {
+    const event = this.race.update(dt, {
       position: this.playerPhysics.position,
       speed: this.playerPhysics.speed,
       gForceLat: this.playerPhysics.gForceLat,
@@ -502,16 +502,6 @@ class Game {
     if (this.race.state === 'countdown') {
       this.hud.showCountdown(this.race.countdownValue);
     }
-
-    const event = this.race.update(dt, {
-      position: this.playerPhysics.position,
-      speed: this.playerPhysics.speed,
-      gForceLat: physData.gForceLat,
-      gForceLon: physData.gForceLon,
-      driftAngle: this.playerPhysics.driftAngle,
-      throttle: this.playerPhysics.throttle,
-      brake: this.playerPhysics.brake,
-    }, this.trackData, this.aiDirector);
 
     if (event === 'lap') {
       this.hud.showMessage(`Lap ${this.race.currentLap}/${this.race.totalLaps}`, 2000);
