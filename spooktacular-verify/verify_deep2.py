@@ -1,0 +1,10 @@
+import pathlib, re
+p = pathlib.Path('spooktacular-halloween-app/Tests/SpookyDeepTests.swift')
+txt = p.read_text(encoding='utf-8', errors='ignore')
+print('lines=' + str(len(txt.splitlines())))
+s = re.sub(r'"(?:[^"\\]|\\.)*"', '""', txt)
+s = re.sub(r'//.*', '', s)
+bal = (s.count('{') - s.count('}'), s.count('(') - s.count(')'), s.count('[') - s.count(']'))
+print('balance: ' + str(bal) + (' OK' if bal == (0, 0, 0) else ' BAD'))
+print('XCTest classes:', len(re.findall(r'final class \w+: XCTestCase', txt)))
+print('asserts:', len(re.findall(r'XCTAssert', txt)))
