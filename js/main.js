@@ -29,15 +29,15 @@ class Game {
     this.playerPhysics = null;
     this.trackData = null;
     this.scenery = null;
-    this.input = new InputManager();
-    this.hud = new HUD();
-    this.audio = new AudioManager();
+    this.input = null;
+    this.hud = null;
+    this.audio = null;
     this.weather = null;
     this.particles = null;
     this.configurator = null;
     this.cameraController = null;
     this.menu = null;
-    this.race = new RaceManager();
+    this.race = null;
     this.aiDirector = null;
     this.clock = new THREE.Clock();
     this.animFrameId = null;
@@ -67,6 +67,10 @@ class Game {
     try {
     this.updateLoader(5, 'Initializing renderer...');
     this.renderer = createRenderer(this.canvas);
+    this.input = new InputManager();
+    this.hud = new HUD();
+    this.audio = new AudioManager();
+    this.race = new RaceManager();
 
     this.updateLoader(10, 'Creating scene...');
     this.scene = createScene(this.renderer);
