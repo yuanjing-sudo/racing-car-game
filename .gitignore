@@ -15,3 +15,6 @@ install.ps1
 opencode.json
 opencode.json.bak
 sec2_compo_fanwen.txt
+.opencode/
+AGENTS.md
+prompts/
