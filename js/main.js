@@ -86,6 +86,8 @@ class Game {
     this.weather.createSky();
     this.weather.createRain();
     this.weather.createSnow();
+    this.weather.createPetalParticles();
+    this.weather.createLeafParticles();
     this.weather.createCloudLayer();
 
     this.updateLoader(25, 'Creating particle system...');

@@ -259,35 +259,39 @@ function addSnowParticles(group, trackCurve) {
 function addGrassPatches(group, theme, noise, trackCurve, seed) {
   if (theme === 'city' || theme === 'desert') return;
   const rng = seededRandom(seed + 400);
-  const patchCount = theme === 'countryside' ? 400 : 200;
+  const sprigCount = theme === 'countryside' ? 150 : theme === 'forest' ? 200 : 60;
 
-  const grassGeo = new THREE.PlaneGeometry(0.6, 1.0);
+  const grassGeo = new THREE.PlaneGeometry(0.14, 0.5);
   const grassMat = new THREE.MeshStandardMaterial({
     color: theme === 'forest' ? 0x3a9a3a : 0x6ab04c,
     roughness: 0.95,
     side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.95,
   });
 
-  const grassMesh = new THREE.InstancedMesh(grassGeo, grassMat, patchCount);
+  const grassGroup = new THREE.Group();
 
-  for (let i = 0; i < patchCount; i++) {
+  for (let i = 0; i < sprigCount; i++) {
     const x = (rng() - 0.5) * 400;
     const z = (rng() - 0.5) * 400;
 
     if (trackCurve && isTooCloseToTrack(x, z, trackCurve, 18)) continue;
 
     const y = getTerrainHeight(x, z, theme, noise);
-    const dummy = new THREE.Object3D();
-    dummy.position.set(x, y + 0.3, z);
-    dummy.rotation.y = rng() * Math.PI * 2;
-    dummy.scale.setScalar(0.5 + rng() * 1.5);
-    dummy.updateMatrix();
-    grassMesh.setMatrixAt(i, dummy.matrix);
+    const sprig = new THREE.Mesh(grassGeo, grassMat);
+    sprig.position.set(x, y + 0.25, z);
+    sprig.rotation.y = rng() * Math.PI * 2;
+    sprig.rotation.x = (rng() - 0.5) * 0.4;
+    sprig.rotation.z = (rng() - 0.5) * 0.3;
+    sprig.scale.setScalar(0.6 + rng() * 1.0);
+    sprig.castShadow = true;
+    sprig.receiveShadow = true;
+    sprig.userData = { baseY: sprig.position.y, sway: rng() * Math.PI * 2, swaySpeed: 1 + rng() * 2 };
+    grassGroup.add(sprig);
   }
 
-  grassMesh.count = patchCount;
-  grassMesh.instanceMatrix.needsUpdate = true;
-  group.add(grassMesh);
+  group.add(grassGroup);
 }
 
 function addClouds(group, theme, seed) {

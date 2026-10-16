@@ -18,6 +18,8 @@ export class WeatherSystem {
 
     this.rainParticles = null;
     this.snowParticles = null;
+    this.petalParticles = null;
+    this.leafParticles = null;
     this.fog = new THREE.FogExp2(0x8899aa, 0.002);
 
     this.cloudMeshes = [];
@@ -29,6 +31,12 @@ export class WeatherSystem {
     this.transitionProgress = 0;
     this.targetWeather = 'clear';
     this.previousWeather = 'clear';
+
+    this.seasons = ['winter', 'spring', 'summer', 'autumn'];
+    this.seasonIndex = 0;
+    this.seasonTimer = 0;
+    this.seasonDuration = 30;
+    this.seasonCycleActive = true;
   }
 
   setupLights() {
@@ -166,6 +174,97 @@ export class WeatherSystem {
     this.scene.add(this.snowParticles);
   }
 
+  createPetalParticles(count = 2000) {
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const velocities = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+
+    const petalColors = [
+      new THREE.Color(0xffb6c1),
+      new THREE.Color(0xffc0cb),
+      new THREE.Color(0xffd1dc),
+      new THREE.Color(0xfff0f5),
+      new THREE.Color(0xff69b4),
+    ];
+
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * 400;
+      positions[i * 3 + 1] = Math.random() * 120;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 400;
+      velocities[i * 3] = (Math.random() - 0.5) * 1;
+      velocities[i * 3 + 1] = -1 - Math.random() * 2;
+      velocities[i * 3 + 2] = (Math.random() - 0.5) * 1;
+
+      const c = petalColors[Math.floor(Math.random() * petalColors.length)];
+      colors[i * 3] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const mat = new THREE.PointsMaterial({
+      size: 0.15,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+    });
+
+    this.petalParticles = new THREE.Points(geo, mat);
+    this.petalParticles.visible = false;
+    this.scene.add(this.petalParticles);
+  }
+
+  createLeafParticles(count = 2000) {
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const velocities = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+
+    const leafColors = [
+      new THREE.Color(0xffd700),
+      new THREE.Color(0xff8c00),
+      new THREE.Color(0xd2691e),
+      new THREE.Color(0x8b4513),
+      new THREE.Color(0xffa500),
+      new THREE.Color(0xdaa520),
+    ];
+
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * 400;
+      positions[i * 3 + 1] = Math.random() * 120;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 400;
+      velocities[i * 3] = (Math.random() - 0.5) * 1.5;
+      velocities[i * 3 + 1] = -1.5 - Math.random() * 2.5;
+      velocities[i * 3 + 2] = (Math.random() - 0.5) * 1.5;
+
+      const c = leafColors[Math.floor(Math.random() * leafColors.length)];
+      colors[i * 3] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const mat = new THREE.PointsMaterial({
+      size: 0.2,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+    });
+
+    this.leafParticles = new THREE.Points(geo, mat);
+    this.leafParticles.visible = false;
+    this.scene.add(this.leafParticles);
+  }
+
   createCloudLayer() {
     const cloudGeo = new THREE.SphereGeometry(1, 8, 6);
     const cloudMat = new THREE.MeshStandardMaterial({
@@ -206,6 +305,7 @@ export class WeatherSystem {
 
   update(dt, cameraPosition) {
     this.updateTimeOfDay(dt);
+    this.updateSeasonCycle(dt);
     this.updateWeatherTransition(dt);
     this.updateSunPosition();
     this.updateFog();
@@ -230,6 +330,29 @@ export class WeatherSystem {
       }
     }
   }
+
+  updateSeasonCycle(dt) {
+    if (!this.seasonCycleActive) return;
+    this.seasonTimer += dt;
+    if (this.seasonTimer >= this.seasonDuration) {
+      this.seasonTimer = 0;
+      this.seasonIndex = (this.seasonIndex + 1) % this.seasons.length;
+      const season = this.seasons[this.seasonIndex];
+      this.setSeason(season);
+    }
+  }
+
+  setSeason(season) {
+    switch (season) {
+      case 'winter': this.setWeather('snow'); break;
+      case 'spring': this.setWeather('petals'); break;
+      case 'summer': this.setWeather('clear'); break;
+      case 'autumn': this.setWeather('leaves'); break;
+    }
+  }
+
+  getSeason() { return this.seasons[this.seasonIndex]; }
+  getSeasonProgress() { return this.seasonTimer / this.seasonDuration; }
 
   updateSunPosition() {
     const sunAngle = ((this.timeOfDay - 6) / 12) * Math.PI;
@@ -274,9 +397,21 @@ export class WeatherSystem {
       if (this.currentWeather === 'overcast' || this.currentWeather === 'rain' || this.currentWeather === 'storm') {
         topColor.lerp(new THREE.Color(0x555555), 0.5);
         bottomColor.lerp(new THREE.Color(0x777777), 0.5);
-      } else if (this.currentWeather === 'fog') {
+      } else       if (this.currentWeather === 'fog') {
         topColor.lerp(new THREE.Color(0x999999), 0.7);
         bottomColor.lerp(new THREE.Color(0xaaaaaa), 0.7);
+      }
+
+      const season = this.getSeason();
+      if (season === 'winter') {
+        topColor.lerp(new THREE.Color(0x446688), 0.4);
+        bottomColor.lerp(new THREE.Color(0xeeeeff), 0.3);
+      } else if (season === 'spring') {
+        topColor.lerp(new THREE.Color(0x88ccff), 0.3);
+        bottomColor.lerp(new THREE.Color(0xfff0f5), 0.3);
+      } else if (season === 'autumn') {
+        topColor.lerp(new THREE.Color(0xff8844), 0.35);
+        bottomColor.lerp(new THREE.Color(0xffddaa), 0.3);
       }
 
       this.sky.material.uniforms.topColor.value.copy(topColor);
@@ -300,6 +435,12 @@ export class WeatherSystem {
     } else if (this.currentWeather === 'overcast') {
       targetDensity = 0.003;
       fogColor = new THREE.Color(0x8899aa);
+    } else if (this.currentWeather === 'petals') {
+      targetDensity = 0.0025;
+      fogColor = new THREE.Color(0xfff0f5);
+    } else if (this.currentWeather === 'leaves') {
+      targetDensity = 0.003;
+      fogColor = new THREE.Color(0xffddaa);
     }
 
     if (this.timeOfDay < 6 || this.timeOfDay > 20) {
@@ -374,12 +515,58 @@ export class WeatherSystem {
         this.snowParticles.geometry.attributes.position.needsUpdate = true;
       }
     }
+
+    if (this.petalParticles) {
+      this.petalParticles.visible = this.currentWeather === 'petals';
+      if (this.petalParticles.visible) {
+        const positions = this.petalParticles.geometry.attributes.position.array;
+        const velocities = this.petalParticles.geometry.attributes.velocity.array;
+        const count = positions.length / 3;
+
+        for (let i = 0; i < count; i++) {
+          positions[i * 3] += (velocities[i * 3] + Math.sin(Date.now() * 0.002 + i) * 0.8) * dt;
+          positions[i * 3 + 1] += velocities[i * 3 + 1] * dt;
+          positions[i * 3 + 2] += (velocities[i * 3 + 2] + Math.cos(Date.now() * 0.002 + i) * 0.6) * dt;
+
+          if (positions[i * 3 + 1] < 0) {
+            positions[i * 3] = cameraPosition.x + (Math.random() - 0.5) * 400;
+            positions[i * 3 + 1] = 70 + Math.random() * 50;
+            positions[i * 3 + 2] = cameraPosition.z + (Math.random() - 0.5) * 400;
+          }
+        }
+        this.petalParticles.geometry.attributes.position.needsUpdate = true;
+      }
+    }
+
+    if (this.leafParticles) {
+      this.leafParticles.visible = this.currentWeather === 'leaves';
+      if (this.leafParticles.visible) {
+        const positions = this.leafParticles.geometry.attributes.position.array;
+        const velocities = this.leafParticles.geometry.attributes.velocity.array;
+        const count = positions.length / 3;
+
+        for (let i = 0; i < count; i++) {
+          positions[i * 3] += (velocities[i * 3] + Math.sin(Date.now() * 0.0015 + i) * 1.2) * dt;
+          positions[i * 3 + 1] += velocities[i * 3 + 1] * dt;
+          positions[i * 3 + 2] += (velocities[i * 3 + 2] + Math.cos(Date.now() * 0.0015 + i) * 1.0) * dt;
+
+          if (positions[i * 3 + 1] < 0) {
+            positions[i * 3] = cameraPosition.x + (Math.random() - 0.5) * 400;
+            positions[i * 3 + 1] = 70 + Math.random() * 50;
+            positions[i * 3 + 2] = cameraPosition.z + (Math.random() - 0.5) * 400;
+          }
+        }
+        this.leafParticles.geometry.attributes.position.needsUpdate = true;
+      }
+    }
   }
 
   updateLighting() {
     const weatherDim = this.currentWeather === 'overcast' || this.currentWeather === 'rain' ? 0.6 :
       this.currentWeather === 'storm' ? 0.4 :
-      this.currentWeather === 'fog' ? 0.7 : 1.0;
+      this.currentWeather === 'fog' ? 0.7 :
+      this.currentWeather === 'petals' ? 0.95 :
+      this.currentWeather === 'leaves' ? 0.9 : 1.0;
 
     this.ambientLight.intensity = 0.5 * weatherDim;
     this.hemisphereLight.intensity = 0.4 * weatherDim;
@@ -393,6 +580,14 @@ export class WeatherSystem {
       }
       if (this.currentWeather === 'storm') {
         skyColor.lerp(new THREE.Color(0x334455), 0.7);
+      }
+      if (this.currentWeather === 'petals') {
+        skyColor.lerp(new THREE.Color(0xffc0cb), 0.3);
+        groundColor.lerp(new THREE.Color(0xfff0f5), 0.3);
+      }
+      if (this.currentWeather === 'leaves') {
+        skyColor.lerp(new THREE.Color(0xffaa66), 0.3);
+        groundColor.lerp(new THREE.Color(0x8b4513), 0.3);
       }
 
       this.hemisphereLight.color.copy(skyColor);
