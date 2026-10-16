@@ -23,6 +23,7 @@ export function createScenery(theme = 'alpine', seed = 42, trackCurve = null) {
   if (theme === 'forest') addMushrooms(scenery, noise, trackCurve, seed);
 
   addTrackSideDetails(scenery, theme, trackCurve, seed);
+  addFlags(scenery, theme, trackCurve, seed);
 
   return scenery;
 }
@@ -71,26 +72,26 @@ function smoothstep(edge0, edge1, x) {
 
 function getTerrainMaterial(theme) {
   switch (theme) {
-    case 'alpine': return new THREE.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.9, metalness: 0.1 });
-    case 'coastal': return new THREE.MeshStandardMaterial({ color: 0xc2b280, roughness: 0.95, metalness: 0.0 });
-    case 'desert': return new THREE.MeshStandardMaterial({ color: 0xd4a556, roughness: 0.98, metalness: 0.0 });
-    case 'forest': return new THREE.MeshStandardMaterial({ color: 0x3d6b35, roughness: 0.95, metalness: 0.0 });
-    case 'city': return new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.85, metalness: 0.1 });
-    case 'countryside': return new THREE.MeshStandardMaterial({ color: 0x7a9a4a, roughness: 0.9, metalness: 0.0 });
+    case 'alpine': return new THREE.MeshStandardMaterial({ color: 0x9aa5b1, roughness: 0.9, metalness: 0.1 });
+    case 'coastal': return new THREE.MeshStandardMaterial({ color: 0xd4c49e, roughness: 0.95, metalness: 0.0 });
+    case 'desert': return new THREE.MeshStandardMaterial({ color: 0xe8c98a, roughness: 0.98, metalness: 0.0 });
+    case 'forest': return new THREE.MeshStandardMaterial({ color: 0x4a8a3a, roughness: 0.95, metalness: 0.0 });
+    case 'city': return new THREE.MeshStandardMaterial({ color: 0x7a7a8a, roughness: 0.85, metalness: 0.1 });
+    case 'countryside': return new THREE.MeshStandardMaterial({ color: 0x5aa02e, roughness: 0.9, metalness: 0.0 });
     default: return new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9 });
   }
 }
 
 function addTrees(group, theme, noise, trackCurve, seed) {
   const rng = seededRandom(seed + 100);
-  const treeCount = theme === 'forest' ? 400 : theme === 'countryside' ? 200 : 100;
+  const treeCount = theme === 'forest' ? 500 : theme === 'countryside' ? 350 : 120;
 
   const trunkGeo = new THREE.CylinderGeometry(0.15, 0.25, 2, 6);
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3520, roughness: 0.9 });
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5a3a20, roughness: 0.9 });
 
-  const pineGeo = new THREE.ConeGeometry(1.2, 3, 8);
+  const pineGeo = new THREE.ConeGeometry(1.4, 3.5, 10);
   const leafMat = new THREE.MeshStandardMaterial({
-    color: theme === 'forest' ? 0x1a5c1a : 0x2d5a27,
+    color: theme === 'forest' ? 0x2e7d32 : theme === 'countryside' ? 0x4caf50 : 0x2d5a27,
     roughness: 0.85,
   });
 
@@ -169,7 +170,7 @@ function addRocks(group, theme, noise, trackCurve, seed) {
 
 function addCityBuildings(group, trackCurve, seed) {
   const rng = seededRandom(seed + 300);
-  const buildingCount = 60;
+  const buildingCount = 140;
 
   for (let i = 0; i < buildingCount; i++) {
     const t = i / buildingCount;
@@ -178,46 +179,52 @@ function addCityBuildings(group, trackCurve, seed) {
     const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
     const side = i % 2 === 0 ? 1 : -1;
-    const dist = 20 + rng() * 40;
+    const dist = 18 + rng() * 60;
 
     const bx = pt.x + normal.x * dist * side;
     const bz = pt.z + normal.z * dist * side;
 
-    const width = 8 + rng() * 15;
-    const depth = 8 + rng() * 15;
-    const height = 15 + rng() * 50;
+    const width = 10 + rng() * 25;
+    const depth = 10 + rng() * 25;
+    const height = 40 + rng() * 160;
 
-    const buildGeo = new THREE.BoxGeometry(width, height, depth);
+    const hue = 0.55 + rng() * 0.25;
     const buildMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color().setHSL(0.6, 0.1, 0.15 + rng() * 0.2),
-      roughness: 0.7,
-      metalness: 0.3,
+      color: new THREE.Color().setHSL(hue, 0.4, 0.2 + rng() * 0.3),
+      roughness: 0.6,
+      metalness: 0.4,
     });
-    const building = new THREE.Mesh(buildGeo, buildMat);
+    const building = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), buildMat);
     building.position.set(bx, height / 2, bz);
     building.castShadow = true;
     building.receiveShadow = true;
     group.add(building);
 
-    const windowGeo = new THREE.PlaneGeometry(width * 0.8, height * 0.7);
+    const windowGeo = new THREE.PlaneGeometry(width * 0.85, height * 0.75);
     const windowCanvas = document.createElement('canvas');
     windowCanvas.width = 128; windowCanvas.height = 256;
     const wCtx = windowCanvas.getContext('2d');
-    wCtx.fillStyle = '#111122';
+    wCtx.fillStyle = '#0a0a12';
     wCtx.fillRect(0, 0, 128, 256);
-    for (let wy = 0; wy < 20; wy++) {
-      for (let wx = 0; wx < 10; wx++) {
-        if (rng() > 0.4) {
-          wCtx.fillStyle = rng() > 0.5 ? '#ffee88' : '#88ccff';
-          wCtx.fillRect(4 + wx * 12, 4 + wy * 12, 8, 8);
+    for (let wy = 0; wy < 24; wy++) {
+      for (let wx = 0; wx < 12; wx++) {
+        if (rng() > 0.35) {
+          wCtx.fillStyle = rng() > 0.5 ? '#ffe082' : '#bbdefb';
+          wCtx.fillRect(4 + wx * 10, 4 + wy * 10, 7, 7);
         }
       }
     }
     const windowTex = new THREE.CanvasTexture(windowCanvas);
     const windowMat = new THREE.MeshBasicMaterial({ map: windowTex });
     const windowMesh = new THREE.Mesh(windowGeo, windowMat);
-    windowMesh.position.set(bx, height * 0.5, bz + depth / 2 + 0.01);
+    windowMesh.position.set(bx, height * 0.5, bz + depth / 2 + 0.02);
     group.add(windowMesh);
+
+    const roofGeo = new THREE.BoxGeometry(width * 1.1, 2, depth * 1.1);
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8, roughness: 0.2 });
+    const roof = new THREE.Mesh(roofGeo, roofMat);
+    roof.position.set(bx, height + 1, bz);
+    group.add(roof);
   }
 }
 
@@ -252,11 +259,11 @@ function addSnowParticles(group, trackCurve) {
 function addGrassPatches(group, theme, noise, trackCurve, seed) {
   if (theme === 'city' || theme === 'desert') return;
   const rng = seededRandom(seed + 400);
-  const patchCount = 200;
+  const patchCount = theme === 'countryside' ? 400 : 200;
 
-  const grassGeo = new THREE.PlaneGeometry(0.5, 0.8);
+  const grassGeo = new THREE.PlaneGeometry(0.6, 1.0);
   const grassMat = new THREE.MeshStandardMaterial({
-    color: theme === 'forest' ? 0x2d7a2d : 0x5a8a3a,
+    color: theme === 'forest' ? 0x3a9a3a : 0x6ab04c,
     roughness: 0.95,
     side: THREE.DoubleSide,
   });
@@ -450,6 +457,46 @@ function isTooCloseToTrack(x, z, trackCurve, threshold) {
     if (dist < threshold) return true;
   }
   return false;
+}
+
+function addFlags(group, theme, trackCurve, seed) {
+  const rng = seededRandom(seed + 900);
+  const flagCount = 40;
+
+  const poleGeo = new THREE.CylinderGeometry(0.03, 0.03, 2.2, 6);
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.6, roughness: 0.3 });
+
+  for (let i = 0; i < flagCount; i++) {
+    const t = i / flagCount;
+    const pt = trackCurve.getPointAt(t);
+    const tangent = trackCurve.getTangentAt(t);
+    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+
+    const side = i % 2 === 0 ? 1 : -1;
+    const dist = 6 + rng() * 4;
+
+    const px = pt.x + normal.x * dist * side;
+    const pz = pt.z + normal.z * dist * side;
+    const py = pt.y;
+
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.set(px, py + 1.1, pz);
+    pole.rotation.z = Math.atan2(tangent.x, tangent.z) - Math.PI / 2;
+    group.add(pole);
+
+    const flagGeo = new THREE.PlaneGeometry(0.9, 0.5);
+    const hue = 0.55 + rng() * 0.4;
+    const flagMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color().setHSL(hue, 0.8, 0.55),
+      roughness: 0.9,
+      side: THREE.DoubleSide,
+    });
+    const flag = new THREE.Mesh(flagGeo, flagMat);
+    flag.position.set(px, py + 2.0, pz);
+    flag.rotation.z = Math.atan2(tangent.x, tangent.z) - Math.PI / 2;
+    flag.rotation.x = Math.sin(Date.now() * 0.002 + i) * 0.1;
+    group.add(flag);
+  }
 }
 
 function seededRandom(seed) {
