@@ -64,11 +64,12 @@ class Game {
   }
 
   async init() {
+    try {
     this.updateLoader(5, 'Initializing renderer...');
     this.renderer = createRenderer(this.canvas);
 
     this.updateLoader(10, 'Creating scene...');
-    this.scene = createScene();
+    this.scene = createScene(this.renderer);
     this.camera = createCamera();
 
     this.updateLoader(15, 'Setting up post-processing...');
@@ -129,6 +130,11 @@ class Game {
       this.menu.show();
       this.startRenderLoop();
     }, 500);
+    } catch (err) {
+      console.error('Init error:', err);
+      const statusEl = document.getElementById('loaderStatus');
+      if (statusEl) statusEl.textContent = `Error: ${err.message}`;
+    }
   }
 
   updateLoader(progress, status) {

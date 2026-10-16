@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-export function createScene() {
+export function createScene(renderer) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0a0a0a);
   scene.fog = new THREE.Fog(0x0a0a0a, 15, 50);
 
-  const pmrem = new THREE.PMREMGenerator(new THREE.WebGLRenderer());
+  const pmrem = new THREE.PMREMGenerator(renderer);
   const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   scene.environment = envTex;
 
