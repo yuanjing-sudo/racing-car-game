@@ -166,7 +166,8 @@ export class GameMenu {
   }
 
   updateUI() {
-    document.getElementById('time-display')?.textContent = this.formatTime(this.raceSettings.timeOfDay);
+    const timeEl = document.getElementById('time-display');
+    if (timeEl) timeEl.textContent = this.formatTime(this.raceSettings.timeOfDay);
   }
 
   formatTime(hours) {

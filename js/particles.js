@@ -32,7 +32,7 @@ export class ParticleSystem {
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
-        texture: { value: this.createSmokeTexture() },
+        uTexture: { value: this.createSmokeTexture() },
       },
       vertexShader: `
         attribute float size;
@@ -46,10 +46,10 @@ export class ParticleSystem {
         }
       `,
       fragmentShader: `
-        uniform sampler2D texture;
+        uniform sampler2D uTexture;
         varying float vOpacity;
         void main() {
-          vec4 texColor = texture2D(texture, gl_PointCoord);
+          vec4 texColor = texture2D(uTexture, gl_PointCoord);
           gl_FragColor = vec4(texColor.rgb, texColor.a * vOpacity);
           if (gl_FragColor.a < 0.01) discard;
         }
@@ -106,7 +106,7 @@ export class ParticleSystem {
     geo.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
 
     const mat = new THREE.ShaderMaterial({
-      uniforms: { texture: { value: this.createSmokeTexture() } },
+      uniforms: { uTexture: { value: this.createSmokeTexture() } },
       vertexShader: `
         attribute float size;
         attribute float opacity;
@@ -119,10 +119,10 @@ export class ParticleSystem {
         }
       `,
       fragmentShader: `
-        uniform sampler2D texture;
+        uniform sampler2D uTexture;
         varying float vOpacity;
         void main() {
-          vec4 texColor = texture2D(texture, gl_PointCoord);
+          vec4 texColor = texture2D(uTexture, gl_PointCoord);
           vec3 dustColor = vec3(0.7, 0.6, 0.4);
           gl_FragColor = vec4(dustColor, texColor.a * vOpacity);
           if (gl_FragColor.a < 0.01) discard;
@@ -155,7 +155,7 @@ export class ParticleSystem {
     geo.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
 
     const mat = new THREE.ShaderMaterial({
-      uniforms: { texture: { value: this.createSparkTexture() } },
+      uniforms: { uTexture: { value: this.createSparkTexture() } },
       vertexShader: `
         attribute float size;
         attribute float opacity;
@@ -168,10 +168,10 @@ export class ParticleSystem {
         }
       `,
       fragmentShader: `
-        uniform sampler2D texture;
+        uniform sampler2D uTexture;
         varying float vOpacity;
         void main() {
-          vec4 texColor = texture2D(texture, gl_PointCoord);
+          vec4 texColor = texture2D(uTexture, gl_PointCoord);
           gl_FragColor = vec4(1.0, 0.8, 0.2, texColor.a * vOpacity);
           if (gl_FragColor.a < 0.01) discard;
         }
@@ -217,7 +217,7 @@ export class ParticleSystem {
     geo.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
 
     const mat = new THREE.ShaderMaterial({
-      uniforms: { texture: { value: this.createSmokeTexture() } },
+      uniforms: { uTexture: { value: this.createSmokeTexture() } },
       vertexShader: `
         attribute float size;
         attribute float opacity;
@@ -230,10 +230,10 @@ export class ParticleSystem {
         }
       `,
       fragmentShader: `
-        uniform sampler2D texture;
+        uniform sampler2D uTexture;
         varying float vOpacity;
         void main() {
-          vec4 texColor = texture2D(texture, gl_PointCoord);
+          vec4 texColor = texture2D(uTexture, gl_PointCoord);
           vec3 exhaustColor = vec3(0.3, 0.3, 0.3);
           gl_FragColor = vec4(exhaustColor, texColor.a * vOpacity);
           if (gl_FragColor.a < 0.01) discard;
@@ -265,7 +265,7 @@ export class ParticleSystem {
     geo.setAttribute('opacity', new THREE.BufferAttribute(opacities, 1));
     geo.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
 
-    const mat = new THREE.MeshBasicMaterial({
+    const mat = new THREE.PointsMaterial({
       color: 0x444444,
       size: 0.05,
       sizeAttenuation: true,
