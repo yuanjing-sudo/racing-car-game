@@ -54,7 +54,7 @@ export function createScene(renderer) {
 }
 
 export function createCamera() {
-  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.3, 1500);
   camera.position.set(6, 3, 8);
   camera.lookAt(0, 0.5, 0);
   return camera;

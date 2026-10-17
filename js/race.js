@@ -46,6 +46,7 @@ export class RaceManager {
     this.state = 'countdown';
     this.countdownValue = 3;
     this.countdownTimer = 3.0;
+    this.countdownEndTime = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + 3000;
     this.raceTime = 0;
     this.currentLap = 1;
     this.totalLaps = settings.laps || 3;
@@ -83,18 +84,21 @@ export class RaceManager {
 
   update(dt, carData, trackData, aiData) {
     switch (this.state) {
-      case 'countdown': this.updateCountdown(dt); break;
-      case 'racing': this.updateRacing(dt, carData, trackData, aiData); break;
-      case 'finished': this.updateFinished(dt); break;
-      case 'paused': break;
+      case 'countdown': return this.updateCountdown(dt);
+      case 'racing': return this.updateRacing(dt, carData, trackData, aiData);
+      case 'finished': this.updateFinished(dt); return null;
+      case 'paused': return null;
     }
+    return null;
   }
 
   updateCountdown(dt) {
-    this.countdownTimer -= dt;
-    this.countdownValue = Math.ceil(this.countdownTimer);
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const remaining = (this.countdownEndTime - now) / 1000;
+    this.countdownTimer = remaining;
+    this.countdownValue = Math.max(1, Math.ceil(remaining));
 
-    if (this.countdownTimer <= 0) {
+    if (remaining <= 0) {
       this.state = 'racing';
       this.raceTime = 0;
       this.lapStartTime = 0;
@@ -122,6 +126,10 @@ export class RaceManager {
 
     this.gForceHistory.push({ lat: carData.gForceLat, lon: carData.gForceLon, time: this.raceTime });
     if (this.gForceHistory.length > 600) this.gForceHistory.shift();
+
+    const event = this.pendingEvent || null;
+    this.pendingEvent = null;
+    return event;
   }
 
   updateTireWear(dt, carData) {
@@ -188,7 +196,7 @@ export class RaceManager {
     const checkpointIdx = Math.floor((closestIdx / pts.length) * trackData.checkpoints.length);
 
     if (this.lastCheckpointIdx > trackData.checkpoints.length * 0.8 && checkpointIdx < trackData.checkpoints.length * 0.2) {
-      this.completeLap();
+      this.pendingEvent = this.completeLap();
     }
 
     this.lastCheckpointIdx = checkpointIdx;

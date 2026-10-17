@@ -36,7 +36,7 @@ export class WeatherSystem {
     this.seasonIndex = 0;
     this.seasonTimer = 0;
     this.seasonDuration = 30;
-    this.seasonCycleActive = true;
+    this.seasonCycleActive = false;
   }
 
   setupLights() {
@@ -342,6 +342,15 @@ export class WeatherSystem {
     }
   }
 
+  setSeasonCycle(enabled, startIndex = 0) {
+    this.seasonCycleActive = !!enabled;
+    this.seasonIndex = startIndex % this.seasons.length;
+    this.seasonTimer = 0;
+    if (this.seasonCycleActive) {
+      this.setSeason(this.seasons[this.seasonIndex]);
+    }
+  }
+
   setSeason(season) {
     switch (season) {
       case 'winter': this.setWeather('snow'); break;
@@ -403,13 +412,13 @@ export class WeatherSystem {
       }
 
       const season = this.getSeason();
-      if (season === 'winter') {
+      if (this.seasonCycleActive && season === 'winter') {
         topColor.lerp(new THREE.Color(0x446688), 0.4);
         bottomColor.lerp(new THREE.Color(0xeeeeff), 0.3);
-      } else if (season === 'spring') {
+      } else if (this.seasonCycleActive && season === 'spring') {
         topColor.lerp(new THREE.Color(0x88ccff), 0.3);
         bottomColor.lerp(new THREE.Color(0xfff0f5), 0.3);
-      } else if (season === 'autumn') {
+      } else if (this.seasonCycleActive && season === 'autumn') {
         topColor.lerp(new THREE.Color(0xff8844), 0.35);
         bottomColor.lerp(new THREE.Color(0xffddaa), 0.3);
       }

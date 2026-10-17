@@ -241,7 +241,9 @@ class Game {
     this.aiDirector.numOpponents = settings.opponents || 10;
 
     this.updateLoader(75, 'Configuring weather...');
-    if (settings.weather) this.weather.setWeather(settings.weather);
+    const isCityTrack = settings.track === 'city';
+    this.weather.setSeasonCycle(isCityTrack, 0);
+    if (!isCityTrack && settings.weather) this.weather.setWeather(settings.weather);
     if (settings.timeOfDay) this.weather.setTimeOfDay(settings.timeOfDay);
 
     this.updateLoader(85, 'Starting race...');
@@ -344,7 +346,9 @@ class Game {
   }
 
   render() {
-    const dt = Math.min(this.clock.getDelta(), 0.05);
+    const rawDt = this.clock.getDelta();
+    const dt = Math.min(rawDt, 0.05);
+    this.rawDt = Math.min(rawDt, 0.25);
     this.elapsedTime += dt;
     this.updateFPS(dt);
 
@@ -491,7 +495,8 @@ class Game {
   }
 
   updateRaceLogic(dt, physData) {
-    const event = this.race.update(dt, {
+    const raceDt = this.rawDt !== undefined ? this.rawDt : dt;
+    const event = this.race.update(raceDt, {
       position: this.playerPhysics.position,
       speed: this.playerPhysics.speed,
       gForceLat: this.playerPhysics.gForceLat,
@@ -503,6 +508,8 @@ class Game {
 
     if (this.race.state === 'countdown') {
       this.hud.showCountdown(this.race.countdownValue);
+    } else if (event === 'go') {
+      this.hud.showCountdown(0);
     }
 
     if (event === 'lap') {

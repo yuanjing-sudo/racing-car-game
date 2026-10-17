@@ -94,7 +94,7 @@ export class CameraController {
       position.z - cosH * dist
     );
 
-    const dampFactor = isDrifting => 3 + (isDrifting ? 2 : 0);
+    const dampFactor = carData.isDrifting ? 5 : 3;
     this.smoothPosition.x = damp(this.smoothPosition.x, targetPos.x, dampFactor, dt);
     this.smoothPosition.y = damp(this.smoothPosition.y, targetPos.y, dampFactor, dt);
     this.smoothPosition.z = damp(this.smoothPosition.z, targetPos.z, dampFactor, dt);

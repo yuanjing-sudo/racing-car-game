@@ -16,9 +16,9 @@ export function createPostFX(renderer, scene, camera) {
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(size.x, size.y),
-    0.85,
-    0.85,
-    0.75
+    0.5,
+    0.6,
+    1.25
   );
   composer.addPass(bloomPass);
 
