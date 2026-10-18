@@ -52,6 +52,22 @@ public class TDCSceneBootstrap : MonoBehaviour
     public Color skyColour = new Color(0.012f, 0.016f, 0.03f);
     public float cameraFarPlane = 20000f;
 
+    [Header("Weather")]
+    [Tooltip("0 = bone dry, 1 = standing water. One number drives three things: the tyre " +
+             "model's grip, the spray particles, and how the car sounds under load.")]
+    [Range(0f, 1f)] public float wetness = 0f;
+
+    [Header("Audio")]
+    [Tooltip("Build the synthesised engine, tyre and wind audio. No audio files are used.")]
+    public bool audioEnabled = true;
+
+    [Tooltip("Master volume of the synthesised mix.")]
+    [Range(0f, 1f)] public float audioGain = 0.32f;
+
+    [Header("FX")]
+    [Tooltip("Build the tyre smoke, wet spray and brake lights.")]
+    public bool fxEnabled = true;
+
     [Header("Physics")]
     [Tooltip("Fixed physics step. 1/120 s keeps the tyre model stable at 300+ km/h.")]
     public float fixedTimeStep = 1f / 120f;
@@ -65,6 +81,12 @@ public class TDCSceneBootstrap : MonoBehaviour
     /// <summary>The chase camera this bootstrap created.</summary>
     public TDCChaseCamera CameraRig { get; private set; }
 
+    /// <summary>The synthesised audio source this bootstrap created.</summary>
+    public TDCEngineAudio EngineAudio { get; private set; }
+
+    /// <summary>The particles and lights this bootstrap created.</summary>
+    public TDCVehicleFX VehicleFX { get; private set; }
+
     void Awake()
     {
         ConfigurePhysics();
@@ -72,6 +94,8 @@ public class TDCSceneBootstrap : MonoBehaviour
         BuildRoad();
         BuildCar();
         BuildCamera();
+        BuildAudio();
+        BuildFx();
     }
 
     [ContextMenu("Rebuild Scene")]
@@ -88,6 +112,8 @@ public class TDCSceneBootstrap : MonoBehaviour
         Road = null;
         Car = null;
         CameraRig = null;
+        EngineAudio = null;
+        VehicleFX = null;
 
         if (!Application.isPlaying)
         {
@@ -101,6 +127,8 @@ public class TDCSceneBootstrap : MonoBehaviour
         BuildRoad();
         BuildCar();
         BuildCamera();
+        BuildAudio();
+        BuildFx();
     }
 
     void DestroyExisting(string objectName)
@@ -201,6 +229,10 @@ public class TDCSceneBootstrap : MonoBehaviour
 
         Car = carObject.AddComponent<TDCPlayerCar>();
         Car.placeholderCarColour = carColour;
+
+        // Set before the object is activated, so the tyre model and the spray
+        // particles agree from the first frame.
+        Car.wetness = wetness;
         carObject.SetActive(true);
 
         // Start on the centreline, pointing along the track.
@@ -245,5 +277,31 @@ public class TDCSceneBootstrap : MonoBehaviour
         // Keep the camera's speed blend in step with the car's top speed.
         CameraRig.referenceTopSpeedKmh = Car.maxSpeedKmh;
         CameraRig.SetTarget(Car.transform, true);
+    }
+
+    void BuildAudio()
+    {
+        if (!audioEnabled) return;
+
+        var audioObject = new GameObject("TDC Engine Audio");
+        audioObject.transform.SetParent(transform, false);
+
+        // TDCEngineAudio requires an AudioSource, which Unity adds automatically
+        // from the RequireComponent attribute.
+        EngineAudio = audioObject.AddComponent<TDCEngineAudio>();
+        EngineAudio.car = Car;
+        EngineAudio.masterGain = audioGain;
+    }
+
+    void BuildFx()
+    {
+        if (!fxEnabled) return;
+
+        var fxObject = new GameObject("TDC Vehicle FX");
+        fxObject.transform.SetParent(transform, false);
+
+        VehicleFX = fxObject.AddComponent<TDCVehicleFX>();
+        VehicleFX.car = Car;
+        VehicleFX.wetness = wetness;
     }
 }

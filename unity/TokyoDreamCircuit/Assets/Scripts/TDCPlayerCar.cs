@@ -143,6 +143,20 @@ public class TDCPlayerCar : MonoBehaviour
     public bool physicsEnabled = true;
 
     // ---------------------------------------------------------------------
+    // Drivetrain, for audio and telemetry
+    // ---------------------------------------------------------------------
+
+    [Header("Drivetrain")]
+    [Tooltip("Forward gears available to the drivetrain model that drives the engine audio.")]
+    [Range(1, 8)] public int gearCount = 6;
+
+    [Tooltip("Engine speed at which the audio model shifts up, in rpm.")]
+    public float shiftUpRpm = 7200f;
+
+    [Tooltip("Engine speed at which the audio model shifts down, in rpm.")]
+    public float shiftDownRpm = 3200f;
+
+    // ---------------------------------------------------------------------
     // Telemetry
     // ---------------------------------------------------------------------
 
@@ -167,10 +181,37 @@ public class TDCPlayerCar : MonoBehaviour
     /// <summary>0..1 brake pedal, for brake lights.</summary>
     public float BrakeInput { get; private set; }
 
+    /// <summary>
+    /// -maxReverseThrottle..1 throttle pedal, as read last physics tick. Exposed
+    /// for engine audio and telemetry.
+    /// </summary>
+    public float ThrottleInput { get; private set; }
+
+    /// <summary>
+    /// Engine speed in rpm, from the lightweight drivetrain model below. Good
+    /// enough to drive engine audio: it climbs to <see cref="shiftUpRpm"/>, drops
+    /// on each shift, and sits at idle when the car is stopped.
+    /// </summary>
+    public float EngineRpm { get; private set; }
+
+    /// <summary>Selected gear, 1-based, from the same model.</summary>
+    public int CurrentGear { get; private set; }
+
+    /// <summary>
+    /// 0..1 how hard the tyres are sliding, for smoke and skid effects. Combines
+    /// a slip-angle term with a wheelspin term, so a slow, hugely sideways car
+    /// smokes as much as a fast one scrubbing.
+    /// </summary>
+    public float TyreSlip01 { get; private set; }
+
     public bool IsDrifting
     {
         get { return AbsoluteSpeedKmh > 30f && Mathf.Abs(RearSlipAngleDeg) > 12f; }
     }
+
+    /// <summary>Ratios the drivetrain model steps through. Fourth is near 1:1.</summary>
+    static readonly float[] GearRatios = { 3.2f, 2.1f, 1.5f, 1.15f, 0.92f, 0.75f, 0.63f, 0.55f };
+    const float FinalDrive = 3.4f;
 
     // ---------------------------------------------------------------------
     // State
@@ -268,6 +309,7 @@ public class TDCPlayerCar : MonoBehaviour
         steeringInput = Mathf.Clamp(TDCInput.Steer, -1f, 1f);
         BrakeInput = TDCInput.Brake;
         handbrake = TDCInput.Handbrake;
+        ThrottleInput = throttleInput;
 
         if (TDCInput.ResetPressed) ResetCar();
 
@@ -294,6 +336,9 @@ public class TDCPlayerCar : MonoBehaviour
         throttleInput = 0f;
         steeringInput = 0f;
         BrakeInput = 0f;
+        EngineRpm = 900f;
+        CurrentGear = 1;
+        TyreSlip01 = 0f;
     }
 
     // ---------------------------------------------------------------------
@@ -423,6 +468,49 @@ public class TDCPlayerCar : MonoBehaviour
         {
             body.AddForceAtPosition(-up * downforce, body.worldCenterOfMass, ForceMode.Force);
         }
+
+        UpdateDrivetrain(vLong, vLat, speed);
+    }
+
+    /// <summary>
+    /// Steps the lightweight drivetrain model. This is not a real gearbox - there
+    /// is no clutch, no torque converter and no shift time - but it produces the
+    /// two things engine audio needs to read as real: a pitch that tracks road
+    /// speed, and a drop on every upshift.
+    /// </summary>
+    void UpdateDrivetrain(float vLong, float vLat, float speed)
+    {
+        float circumference = Mathf.Max(0.01f, 2f * Mathf.PI * wheelRadius);
+        float wheelRevolutionsPerSecond = Mathf.Abs(vLong) / circumference;
+
+        float ratio = GearRatios[Mathf.Clamp(CurrentGear - 1, 0, GearRatios.Length - 1)];
+        float targetRpm = wheelRevolutionsPerSecond * 60f * ratio * FinalDrive;
+
+        if (vLong >= 0f && CurrentGear < Mathf.Clamp(gearCount, 1, GearRatios.Length)
+            && targetRpm > shiftUpRpm)
+        {
+            CurrentGear++;
+        }
+        else if (CurrentGear > 1 && targetRpm < shiftDownRpm && throttleInput < 0.9f)
+        {
+            // Only drop a gear when the driver is not asking for full power, so
+            // the audio does not hunt on and off the shift point.
+            CurrentGear--;
+        }
+
+        ratio = GearRatios[Mathf.Clamp(CurrentGear - 1, 0, GearRatios.Length - 1)];
+        targetRpm = wheelRevolutionsPerSecond * 60f * ratio * FinalDrive;
+
+        // Below walking pace, sit at idle rather than at ~0 rpm.
+        EngineRpm = Mathf.Lerp(EngineRpm, Mathf.Clamp(targetRpm, 850f, 8000f),
+            1f - Mathf.Exp(-12f * Time.fixedDeltaTime));
+
+        float slipAngleTerm = Mathf.Clamp01(Mathf.Abs(rearSlipAngle) / (30f * Mathf.Deg2Rad));
+        float slipSpeedTerm = Mathf.Clamp01(Mathf.Abs(vLat) / 12f);
+        float wheelspinTerm = Mathf.Clamp01(
+            Mathf.Abs(vLong) * (1f - Speed01 * 0.7f) / 18f) * Mathf.Max(0f, throttleInput);
+
+        TyreSlip01 = Mathf.Clamp01(Mathf.Max(slipAngleTerm * slipSpeedTerm, wheelspinTerm));
     }
 
     /// <summary>

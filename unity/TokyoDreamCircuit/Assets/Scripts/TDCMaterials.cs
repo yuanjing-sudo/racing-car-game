@@ -74,4 +74,112 @@ public static class TDCMaterials
     {
         return CreateLit("TDC Tyre", new Color(0.02f, 0.02f, 0.022f), 0.15f, 0.0f);
     }
+
+    // -------------------------------------------------------------------------
+    // Particles
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Finds a particle shader that supports a texture, a tint and alpha, in
+    /// whichever pipeline is present. The pipeline-specific names come first so a
+    /// URP or HDRP project does not silently fall back to a built-in shader that
+    /// renders magenta.
+    /// </summary>
+    public static Shader FindParticleShader()
+    {
+        Shader shader = Shader.Find("HDRP/Particles/Unlit");
+        if (shader == null) shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+        if (shader == null) shader = Shader.Find("Particles/Standard Unlit");
+        if (shader == null) shader = Shader.Find("Legacy Shaders/Particles/Alpha Blended");
+        if (shader == null) shader = Shader.Find("Sprites/Default");
+        return shader;
+    }
+
+    /// <summary>
+    /// A particle material with a soft-edged puff assigned. Returns null if no
+    /// particle shader exists, in which case the caller should emit nothing rather
+    /// than emit hard-edged squares.
+    /// </summary>
+    public static Material CreateParticle(string name, Color colour)
+    {
+        Shader shader = FindParticleShader();
+        if (shader == null) return null;
+
+        var material = new Material(shader) { name = name };
+
+        if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", colour);
+        if (material.HasProperty("_Color")) material.SetColor("_Color", colour);
+        if (material.HasProperty("_TintColor")) material.SetColor("_TintColor", colour);
+
+        Texture2D puff = CreatePuffTexture(64);
+        if (puff != null)
+        {
+            material.mainTexture = puff;
+            if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", puff);
+        }
+
+        return material;
+    }
+
+    /// <summary>
+    /// A soft radial puff, generated rather than imported. A particle with no
+    /// texture is a hard-edged square; this is the difference between smoke and
+    /// confetti, and it means the project ships no image assets.
+    /// </summary>
+    public static Texture2D CreatePuffTexture(int size)
+    {
+        size = Mathf.Clamp(size, 8, 512);
+
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        texture.name = "TDC Puff";
+        texture.wrapMode = TextureWrapMode.Clamp;
+
+        var pixels = new Color[size * size];
+        float half = size * 0.5f;
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float dx = (x + 0.5f - half) / half;
+                float dy = (y + 0.5f - half) / half;
+                float distance = Mathf.Sqrt(dx * dx + dy * dy);
+
+                // Smoothstep to zero rather than a linear ramp, so the edge of the
+                // puff does not show as a ring.
+                float alpha = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(distance));
+                pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
+            }
+        }
+
+        texture.SetPixels(pixels);
+        texture.Apply(false, true);
+        return texture;
+    }
+
+    /// <summary>
+    /// Turns emission on for a material and returns the property name it used, or
+    /// null if the shader has no emission at all. Built-in and URP use
+    /// _EmissionColor and need the keyword; HDRP uses _EmissiveColor.
+    /// </summary>
+    public static string EnableEmission(Material material, Color colour)
+    {
+        if (material == null) return null;
+
+        if (material.HasProperty("_EmissiveColor"))
+        {
+            material.SetColor("_EmissiveColor", colour);
+            return "_EmissiveColor";
+        }
+
+        if (material.HasProperty("_EmissionColor"))
+        {
+            material.EnableKeyword("_EMISSION");
+            material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+            material.SetColor("_EmissionColor", colour);
+            return "_EmissionColor";
+        }
+
+        return null;
+    }
 }

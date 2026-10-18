@@ -115,20 +115,43 @@ independent of all of that so you can swap.
 | `TDCPlayerCar.Speed01` | motion blur amount, chromatic aberration, FOV, engine pitch |
 | `TDCPlayerCar.SpeedKmh` / `AbsoluteSpeedKmh` | HUD, audio |
 | `TDCPlayerCar.RearSlipAngleDeg` | tyre smoke and screech when drifting |
+| `TDCPlayerCar.TyreSlip01` | the single 0..1 "how hard are the tyres sliding" figure, already blended from slip angle and wheelspin |
 | `TDCPlayerCar.IsDrifting` | camera shake, particle burst |
 | `TDCPlayerCar.BrakeInput` | brake lights |
+| `TDCPlayerCar.EngineRpm` / `CurrentGear` | engine audio — already consumed by `TDCEngineAudio` |
 | `TDCPlayerCar.wetness` | driving rain, spray, reflective sheen — blend it over time |
 | `TDCChaseCamera.Speed01` | the same figure, read from the camera side |
 
 `wetness` is the interesting one: it blends dry grip toward `wetGrip`, so a weather
-system can raise it as the rain builds and cornering speed falls in real time.
+system can raise it as the rain builds and cornering speed falls in real time. The
+bootstrap now feeds the same number to the car's tyre model and to
+`TDCVehicleFX.wetness`, so grip and spray can never disagree.
+
+## Implemented: sound and the first effects
+
+Unlike the Unreal version, this port has no asset dependency for its effects, so
+they are already there:
+
+- `TDCEngineAudio` — engine, tyre scrub and wind, synthesised in
+  `OnAudioFilterRead`. No audio files.
+- `TDCVehicleFX` — tyre smoke on all four wheels, a speed-scaled wet spray, and
+  brake lights whose emission is enabled through whichever property the active
+  render pipeline uses.
+
+The remaining gap is **skid marks**. Unity needs a decal projector (URP/HDRP
+Decal Projector, or the decals feature) or a ribbon mesh with its own ring buffer.
+A ribbon is the route that needs no extra package: keep a `MeshFilter` with a ring
+buffer of quads emitted at each rear contact patch while `TyreSlip01` is high,
+fading the oldest end through vertex colours, and re-upload each frame. That is
+roughly 150 lines and is the same design Godot and Unreal would need.
 
 ## What this is not
 
 To be blunt about the limits of what was delivered:
 
 - It is **not compiled**. No Unity install exists on the device that wrote it.
-- It is **not a game** — no menus, lap timing, AI opponents or audio.
+- It is **not a game** — no menus, lap timing or AI opponents. It does now have
+  sound, and tyre smoke, spray and brake lights.
 - It is **not photorealistic on its own**. It is the skeleton and the settings; the
   realism is Megascans textures, a real HDRI, APV baking and the exposure discipline
   above.
