@@ -9,7 +9,7 @@ import { InputManager } from './controls.js';
 import { HUD } from './hud.js';
 import { AudioManager } from './audio.js';
 import { WeatherSystem } from './weather.js';
-import { ParticleSystem } from './particles.js';
+import { ParticleSystem } from './gfx/particles.js';
 import { CarConfigurator } from './configurator.js';
 import { CameraController } from './camera.js';
 import { GameMenu } from './menu.js';
@@ -504,7 +504,11 @@ class Game {
       if (this.weather.hemisphereLight) this.weather.hemisphereLight.intensity = 0;
     }
 
-    this.particles.update(dt);
+    this.particles.update(dt, {
+      groundY: this.playerPhysics ? this.playerPhysics.position.y : 0,
+      wetness: this.weather ? ((this.weather.currentWeather === 'rain' || this.weather.currentWeather === 'storm') ? 1 : 0) : 0,
+      turbulence: 0.3,
+    });
     this.updateCinematic(dt, rawDt);
 
     const ctx = this.graphicsContext();
@@ -729,6 +733,18 @@ class Game {
 
     // Lay rubber on the tarmac whenever the tyres are slipping.
     this.updateSkidMarks(isDrifting, speed, wheels);
+
+    // Wet-weather rooster tails: spray off all four wheels at speed.
+    const wet = this.weather && (this.weather.currentWeather === 'rain' || this.weather.currentWeather === 'storm');
+    if (wet && speed > 12) {
+      for (let i = 0; i < 4; i++) {
+        const w = wheels[i];
+        if (!w) continue;
+        const wheelPos = new THREE.Vector3();
+        w.getWorldPosition(wheelPos);
+        this.particles.emitSpray(wheelPos, this.playerPhysics.velocity, Math.min(1, speed / 60));
+      }
+    }
 
     if (this.nitro.active) {
       const pulse = 1 + Math.sin(this.elapsedTime * 20) * 0.4;
