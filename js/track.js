@@ -13,6 +13,7 @@ export const TRACK_THEMES = [
   { id: 'desert', name: 'Desert Storm', desc: 'Sand dunes and canyon sweeps' },
   { id: 'forest', name: 'Forest Rally', desc: 'Dense woodland technical stage' },
   { id: 'city', name: 'City Circuit', desc: 'Night street racing through downtown' },
+  { id: 'tokyo', name: 'Tokyo Dream Circuit', desc: 'Rain-slicked neon night through Tokyo' },
   { id: 'countryside', name: 'Countryside Sprint', desc: 'Rolling hills and farmland' },
 ];
 
@@ -61,7 +62,7 @@ export function createTrack(theme = 'alpine', seed = 42) {
   trackData.trackPoints = trackPoints;
 
   const gapZones = [];
-  const numGaps = theme === 'city' ? 0 : 3;
+  const numGaps = theme === 'city' || theme === 'tokyo' ? 0 : 3;
   for (let g = 0; g < numGaps; g++) {
     const tStart = 0.12 + g * 0.28 + randomRange(-0.02, 0.02);
     const tEnd = Math.min(tStart + 0.055, 0.95);
@@ -249,6 +250,7 @@ function getTrackElevationFactor(theme) {
     case 'desert': return 0.4;
     case 'forest': return 0.5;
     case 'city': return 0.05;
+    case 'tokyo': return 0.03;
     case 'countryside': return 0.3;
     default: return 0.5;
   }
@@ -262,6 +264,7 @@ export function getTerrainHeight(x, z, theme, noise) {
     case 'desert': return base * 15;
     case 'forest': return base * 20 + 2;
     case 'city': return 0;
+    case 'tokyo': return 0;
     case 'countryside': return base * 12 + 1;
     default: return base * 15;
   }

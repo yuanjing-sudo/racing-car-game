@@ -14,6 +14,9 @@ export class WeatherSystem {
     this.humidity = 0.5;
     this.precipitation = 0;
     this.fogDensity = 0.002;
+    // Per-scene multiplier applied to the weather fog density. The Tokyo
+    // circuit dims it so the neon skyline stays legible through the rain.
+    this.fogScale = 1;
     this.lightningTimer = 0;
     this.lightningActive = false;
 
@@ -66,7 +69,7 @@ export class WeatherSystem {
   }
 
   createSky() {
-    const skyGeo = new THREE.SphereGeometry(400, 32, 20);
+    const skyGeo = new THREE.SphereGeometry(1400, 32, 20);
     const skyMat = new THREE.ShaderMaterial({
       uniforms: {
         topColor: { value: new THREE.Color(0x0077ff) },
@@ -463,6 +466,8 @@ export class WeatherSystem {
       targetDensity *= 2;
       fogColor.lerp(new THREE.Color(0x222244), 0.5);
     }
+
+    targetDensity *= this.fogScale;
 
     this.fog.density = lerp(this.fog.density, targetDensity, 0.02);
     this.scene.fog = this.fog;

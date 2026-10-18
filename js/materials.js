@@ -226,6 +226,10 @@ export function getRoadMaterial(theme = 'alpine') {
   const maps = getAsphaltMaps();
   const presets = {
     city: { color: 0x1b1d22, metalness: 0.55, envMapIntensity: 1.9 },
+    // Tokyo: soaked tarmac that mirrors the neon signage. High metalness +
+    // strongest env reflection of any theme so the puddle roughness map
+    // turns the road into a wet mirror of the skyline.
+    tokyo: { color: 0x121419, metalness: 0.66, envMapIntensity: 2.35 },
     alpine: { color: 0x2a2c31, metalness: 0.38, envMapIntensity: 1.4 },
     forest: { color: 0x24262a, metalness: 0.35, envMapIntensity: 1.3 },
     desert: { color: 0x4a3f31, metalness: 0.18, envMapIntensity: 0.9 },
@@ -263,7 +267,7 @@ export function getCurbMaterial(theme = 'alpine') {
     const canvas = makeCanvas(128);
     canvas.height = 16;
     const ctx = canvas.getContext('2d');
-    const a = theme === 'city' ? '#e8e8e8' : '#cc0000';
+    const a = theme === 'city' || theme === 'tokyo' ? '#e8e8e8' : '#cc0000';
     const b = '#f5f5f5';
     for (let i = 0; i < 16; i++) {
       ctx.fillStyle = i % 2 === 0 ? a : b;
@@ -288,6 +292,8 @@ export function getBarrierMaterial(theme = 'alpine') {
     switch (theme) {
       case 'city':
         return new THREE.MeshStandardMaterial({ color: 0xb8bcc2, roughness: 0.25, metalness: 0.85, envMapIntensity: 1.8 });
+      case 'tokyo':
+        return new THREE.MeshStandardMaterial({ color: 0xc6ccd4, roughness: 0.18, metalness: 0.9, envMapIntensity: 2.1 });
       case 'desert':
         return new THREE.MeshStandardMaterial({ color: 0xaa8844, roughness: 0.8 });
       case 'forest':
@@ -321,6 +327,20 @@ export function getTerrainMaterial(theme = 'alpine') {
           roughness: 1.0,
           metalness: 0.5,
           envMapIntensity: 1.6,
+        });
+      }
+      case 'tokyo': {
+        // darker, glossier wet concrete for the neon reflections
+        const maps = getAsphaltMaps();
+        return new THREE.MeshStandardMaterial({
+          color: 0x1c1f26,
+          map: maps.map,
+          roughnessMap: maps.roughnessMap,
+          normalMap: maps.normalMap,
+          normalScale: new THREE.Vector2(0.3, 0.3),
+          roughness: 1.0,
+          metalness: 0.58,
+          envMapIntensity: 1.9,
         });
       }
       case 'countryside':

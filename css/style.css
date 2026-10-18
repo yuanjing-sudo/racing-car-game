@@ -36,6 +36,7 @@ body{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;backgrou
 .track-desert{background:linear-gradient(135deg,#cc8833,#ddaa55)}
 .track-forest{background:linear-gradient(135deg,#226622,#448844)}
 .track-city{background:linear-gradient(135deg,#222222,#444466)}
+.track-tokyo{background:linear-gradient(135deg,#12061f,#e5007d 55%,#00e5ff)}
 .track-countryside{background:linear-gradient(135deg,#557733,#77aa44)}
 .track-info{padding:.5rem .8rem}
 .track-name{display:block;font-size:.8rem;font-weight:600}

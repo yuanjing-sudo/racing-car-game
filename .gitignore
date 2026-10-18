@@ -18,3 +18,12 @@ sec2_compo_fanwen.txt
 .opencode/
 AGENTS.md
 prompts/
+
+# Unreal Engine build artifacts (unreal/TokyoDreamCircuit)
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+.vs/
+*.sln
+*.VC.db

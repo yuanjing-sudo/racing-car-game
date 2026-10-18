@@ -241,15 +241,27 @@ class Game {
     this.aiDirector = new AIDirector(this.scene, this.trackData, settings.difficulty, settings.opponents);
 
     this.updateLoader(75, 'Configuring weather...');
+    const isTokyoTrack = settings.track === 'tokyo';
     const isCityTrack = settings.track === 'city';
-    this.weather.setSeasonCycle(isCityTrack, 0);
-    if (!isCityTrack && settings.weather) this.weather.setWeather(settings.weather);
-    if (settings.timeOfDay != null) {
-      this.weather.setTimeOfDay(settings.timeOfDay);
-    } else if (isCityTrack) {
-      // downtown defaults to a neon-lit night so the emissive windows,
-      // wet asphalt and headlights all do their thing
-      this.weather.setTimeOfDay(21);
+    if (isTokyoTrack) {
+      // Tokyo Dream Circuit is authored as a cinematic wet neon night:
+      // rain-slicked tarmac mirroring the signage, headlights on, haze
+      // thinned just enough that the skyline reads.
+      this.weather.setSeasonCycle(false, 0);
+      this.weather.fogScale = 0.35;
+      this.weather.setTimeOfDay(19.6);
+      this.weather.setWeather('rain');
+    } else {
+      this.weather.fogScale = 1;
+      this.weather.setSeasonCycle(isCityTrack, 0);
+      if (!isCityTrack && settings.weather) this.weather.setWeather(settings.weather);
+      if (settings.timeOfDay != null) {
+        this.weather.setTimeOfDay(settings.timeOfDay);
+      } else if (isCityTrack) {
+        // downtown defaults to a neon-lit night so the emissive windows,
+        // wet asphalt and headlights all do their thing
+        this.weather.setTimeOfDay(21);
+      }
     }
 
     this.updateLoader(85, 'Starting race...');
@@ -279,8 +291,16 @@ class Game {
     this.playerCar.position.copy(startPos);
     this.cameraController.reset(startPos);
 
-    this.weather.setWeather('clear');
-    this.weather.setTimeOfDay(14);
+    if (settings.track === 'tokyo') {
+      this.weather.setSeasonCycle(false, 0);
+      this.weather.fogScale = 0.35;
+      this.weather.setWeather('rain');
+      this.weather.setTimeOfDay(19.6);
+    } else {
+      this.weather.fogScale = 1;
+      this.weather.setWeather('clear');
+      this.weather.setTimeOfDay(14);
+    }
 
     this.race.reset();
     this.race.totalLaps = 999;

@@ -1,0 +1,1 @@
+using UnrealBuildTool; public class TokyoDreamCircuit:ModuleRules { public TokyoDreamCircuit(ReadOnlyTargetRules Target):base(Target){PCHUsage=PCHUsageMode.UseExplicitOrSharedPCHs;PublicDependencyModuleNames.AddRange(new string[]{"Core","CoreUObject","Engine","InputCore","ProceduralMeshComponent","PhysicsCore"});}}

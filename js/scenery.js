@@ -13,13 +13,32 @@ export function createScenery(theme = 'alpine', seed = 42, trackCurve = null) {
   terrain.receiveShadow = true;
   scenery.add(terrain);
 
-  if (theme === 'city') {
+  // Tokyo shares the downtown DNA (sakura + towers) but layers on its own
+  // landmarks: a neon skyline ring, Tokyo Tower and a Mount Fuji silhouette.
+  const isUrban = theme === 'city' || theme === 'tokyo';
+
+  if (isUrban) {
     addBlossomTrees(scenery, trackCurve, seed);
   } else {
     addTrees(scenery, theme, noise, trackCurve, seed);
   }
   addRocks(scenery, theme, noise, trackCurve, seed);
   if (theme === 'city') addCityBuildings(scenery, trackCurve, seed);
+  if (theme === 'tokyo') {
+    addCityBuildings(scenery, trackCurve, seed, {
+      count: 190,
+      baseHeight: 60,
+      heightVar: 240,
+      spread: 82,
+      winIntensity: 2.5,
+      neonGain: 2.4,
+      neonPalette: [0x00e5ff, 0xff2d95, 0xffd400, 0x7c4dff, 0x00ff9d, 0xff5a2a, 0xff1f6f],
+    });
+    addTokyoSkyline(scenery, seed);
+    addTokyoTower(scenery);
+    addMountFuji(scenery);
+    addNeonSigns(scenery, trackCurve, seed);
+  }
   if (theme === 'alpine') addSnowParticles(scenery, trackCurve);
   addGrassPatches(scenery, theme, noise, trackCurve, seed);
   addClouds(scenery, theme, seed);
@@ -34,7 +53,9 @@ export function createScenery(theme = 'alpine', seed = 42, trackCurve = null) {
 }
 
 function createTerrain(theme, noise, trackCurve) {
-  const size = 600;
+  // Tokyo spreads its skyline ring and Mount Fuji much further out than the
+  // other themes, so its ground plane needs to reach them.
+  const size = theme === 'tokyo' ? 1800 : 600;
   const res = 128;
   const geo = new THREE.PlaneGeometry(size, size, res, res);
   geo.rotateX(-Math.PI / 2);
@@ -209,7 +230,7 @@ function addTrees(group, theme, noise, trackCurve, seed) {
 }
 
 function addRocks(group, theme, noise, trackCurve, seed) {
-  if (theme === 'city') return;
+  if (theme === 'city' || theme === 'tokyo') return;
   const rng = seededRandom(seed + 200);
   const rockCount = theme === 'desert' ? 150 : 80;
 
@@ -274,9 +295,14 @@ function createWindowTexture(rng) {
   return tex;
 }
 
-function addCityBuildings(group, trackCurve, seed) {
+function addCityBuildings(group, trackCurve, seed, opts = {}) {
   const rng = seededRandom(seed + 300);
-  const buildingCount = 150;
+  const buildingCount = opts.count || 150;
+  const baseHeight = opts.baseHeight || 46;
+  const heightVar = opts.heightVar || 190;
+  const spread = opts.spread || 62;
+  const winIntensity = opts.winIntensity || 1.9;
+  const neonPalette = opts.neonPalette || [0x00e5ff, 0xff2d95, 0xffd400, 0x7c4dff, 0x00ff9d];
 
   // --- tower masses (single draw call) --------------------------
   const massMat = new THREE.MeshStandardMaterial({
@@ -296,7 +322,7 @@ function addCityBuildings(group, trackCurve, seed) {
     map: winTex,
     emissive: 0xffffff,
     emissiveMap: winTex,
-    emissiveIntensity: 1.9,
+    emissiveIntensity: winIntensity,
     roughness: 0.4,
     metalness: 0.0,
   });
@@ -307,12 +333,13 @@ function addCityBuildings(group, trackCurve, seed) {
   const neonGeo = new THREE.BoxGeometry(1, 1, 1);
   const neonMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   neonMat.vertexColors = false;
+  // over-bright multiplier pushes the crowns past the bloom threshold (1.0)
+  if (opts.neonGain) neonMat.color.setScalar(opts.neonGain);
   const neon = new THREE.InstancedMesh(neonGeo, neonMat, buildingCount);
   neon.castShadow = false;
 
   const dummy = new THREE.Object3D();
   const col = new THREE.Color();
-  const neonPalette = [0x00e5ff, 0xff2d95, 0xffd400, 0x7c4dff, 0x00ff9d];
 
   for (let i = 0; i < buildingCount; i++) {
     const t = i / buildingCount;
@@ -321,14 +348,14 @@ function addCityBuildings(group, trackCurve, seed) {
     const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
     const side = i % 2 === 0 ? 1 : -1;
-    const dist = 20 + rng() * 62;
+    const dist = 20 + rng() * spread;
 
     const bx = pt.x + normal.x * dist * side;
     const bz = pt.z + normal.z * dist * side;
 
     const width = 10 + rng() * 26;
     const depth = 10 + rng() * 26;
-    const height = 46 + rng() * 190;
+    const height = baseHeight + rng() * heightVar;
 
     // mass
     dummy.position.set(bx, height / 2, bz);
@@ -399,7 +426,7 @@ function addSnowParticles(group, trackCurve) {
 }
 
 function addGrassPatches(group, theme, noise, trackCurve, seed) {
-  if (theme === 'city' || theme === 'desert') return;
+  if (theme === 'city' || theme === 'tokyo' || theme === 'desert') return;
   const rng = seededRandom(seed + 400);
   const sprigCount = theme === 'countryside' ? 900 : theme === 'forest' ? 1200 : 400;
 
@@ -445,7 +472,7 @@ function addGrassPatches(group, theme, noise, trackCurve, seed) {
 }
 
 function addClouds(group, theme, seed) {
-  if (theme === 'city') return;
+  if (theme === 'city' || theme === 'tokyo') return;
   const rng = seededRandom(seed + 500);
   const cloudCount = 30;
 
@@ -653,6 +680,266 @@ function addFlags(group, theme, trackCurve, seed) {
     flag.rotation.z = Math.atan2(tangent.x, tangent.z) - Math.PI / 2;
     flag.rotation.x = Math.sin(Date.now() * 0.002 + i) * 0.1;
     group.add(flag);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Tokyo Dream Circuit landmarks
+ * A distant neon skyline ring, a red-and-white broadcast tower, a
+ * hazy Mount Fuji on the horizon and vertical neon signage lining the
+ * circuit. Signs / windows are emissive and tone-mapping-exempt so the
+ * bloom pass smears them the way the real Shuto Expressway glows at
+ * night.
+ * ------------------------------------------------------------------ */
+function addTokyoSkyline(group, seed) {
+  const rng = seededRandom(seed + 1100);
+  const count = 130;
+  const winTex = createWindowTexture(rng);
+
+  const massMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.45,
+    metalness: 0.5,
+    envMapIntensity: 1.5,
+  });
+  const masses = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), massMat, count);
+  masses.castShadow = false;
+  masses.receiveShadow = false;
+
+  const winMat = new THREE.MeshStandardMaterial({
+    map: winTex,
+    emissive: 0xffffff,
+    emissiveMap: winTex,
+    emissiveIntensity: 2.4,
+    roughness: 0.4,
+    transparent: true,
+    opacity: 0.96,
+  });
+  const windows = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), winMat, count * 4);
+
+  const neonMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+  neonMat.color.setScalar(2.4);
+  const neon = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), neonMat, count);
+
+  const dummy = new THREE.Object3D();
+  const col = new THREE.Color();
+  const neonPalette = [0x00e5ff, 0xff2d95, 0xffd400, 0x7c4dff, 0x00ff9d, 0xff5a2a];
+
+  const faces = [
+    { nx: 0, nz: 1 },
+    { nx: 1, nz: 0 },
+    { nx: 0, nz: -1 },
+    { nx: -1, nz: 0 },
+  ];
+
+  let wi = 0;
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2 + rng() * 0.06;
+    const radius = 380 + rng() * 80;
+    const bx = Math.cos(a) * radius;
+    const bz = Math.sin(a) * radius;
+
+    const width = 16 + rng() * 34;
+    const depth = 16 + rng() * 34;
+    const height = 70 + rng() * 230;
+
+    dummy.position.set(bx, height / 2, bz);
+    dummy.rotation.set(0, rng() * Math.PI * 2, 0);
+    dummy.scale.set(width, height, depth);
+    dummy.updateMatrix();
+    masses.setMatrixAt(i, dummy.matrix);
+    col.setHSL(0.6 + rng() * 0.12, 0.25, 0.05 + rng() * 0.07);
+    masses.setColorAt(i, col);
+
+    // four lit faces so each tower reads from any approach angle
+    for (const f of faces) {
+      const off = f.nz !== 0 ? depth / 2 : width / 2;
+      const faceWidth = f.nz !== 0 ? width : depth;
+      dummy.position.set(bx + f.nx * off, height * 0.5, bz + f.nz * off);
+      dummy.rotation.set(0, Math.atan2(f.nx, f.nz), 0);
+      dummy.scale.set(faceWidth * 0.86, height * 0.8, 1);
+      dummy.updateMatrix();
+      windows.setMatrixAt(wi++, dummy.matrix);
+    }
+
+    // coloured crown band
+    dummy.position.set(bx, height + 1.5, bz);
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.set(width * 0.92, 1.2, depth * 0.92);
+    dummy.updateMatrix();
+    neon.setMatrixAt(i, dummy.matrix);
+    col.setHex(neonPalette[Math.floor(rng() * neonPalette.length)]);
+    neon.setColorAt(i, col);
+  }
+
+  masses.instanceMatrix.needsUpdate = true;
+  windows.instanceMatrix.needsUpdate = true;
+  neon.instanceMatrix.needsUpdate = true;
+  if (masses.instanceColor) masses.instanceColor.needsUpdate = true;
+  if (neon.instanceColor) neon.instanceColor.needsUpdate = true;
+
+  group.add(masses, windows, neon);
+}
+
+function addTokyoTower(group) {
+  const tower = new THREE.Group();
+
+  const towerMat = new THREE.MeshStandardMaterial({
+    color: 0xff5522,
+    roughness: 0.45,
+    metalness: 0.35,
+    emissive: 0x8a2200,
+    emissiveIntensity: 1.15,
+  });
+  const deckMat = new THREE.MeshStandardMaterial({
+    color: 0xf4f4f4,
+    roughness: 0.4,
+    metalness: 0.2,
+    emissive: 0x2a2a2a,
+    emissiveIntensity: 1.0,
+  });
+
+  // tapered 4-sided shaft reads as the lattice silhouette from a distance
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(8, 30, 300, 4, 1), towerMat);
+  shaft.position.y = 150;
+  tower.add(shaft);
+
+  const mainDeck = new THREE.Mesh(new THREE.CylinderGeometry(17, 19, 11, 4, 1), deckMat);
+  mainDeck.position.y = 152;
+  tower.add(mainDeck);
+
+  const topDeck = new THREE.Mesh(new THREE.CylinderGeometry(10, 12, 9, 4, 1), deckMat);
+  topDeck.position.y = 252;
+  tower.add(topDeck);
+
+  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 2.2, 92, 6), towerMat);
+  antenna.position.y = 348;
+  tower.add(antenna);
+
+  const beaconMat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, toneMapped: false });
+  beaconMat.color.setScalar(3.0);
+  const beacon = new THREE.Mesh(new THREE.SphereGeometry(2.6, 10, 8), beaconMat);
+  beacon.position.y = 396;
+  tower.add(beacon);
+
+  tower.position.set(-330, 0, -260);
+  group.add(tower);
+}
+
+function addMountFuji(group) {
+  const fuji = new THREE.Group();
+
+  // fog opted out + hand-hazed colour so the silhouette always sits on the
+  // horizon instead of being swallowed by the exponential fog.
+  const baseMat = new THREE.MeshStandardMaterial({
+    color: 0x35406b,
+    emissive: 0x121833,
+    emissiveIntensity: 1.0,
+    roughness: 1.0,
+    metalness: 0.0,
+    fog: false,
+  });
+  const base = new THREE.Mesh(new THREE.ConeGeometry(210, 250, 40, 1), baseMat);
+  base.position.y = 125;
+  fuji.add(base);
+
+  const capMat = new THREE.MeshStandardMaterial({
+    color: 0xe8edff,
+    emissive: 0x2b3760,
+    emissiveIntensity: 0.9,
+    roughness: 0.75,
+    metalness: 0.0,
+    fog: false,
+  });
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(78, 96, 40, 1), capMat);
+  cap.position.y = 202; // snow cap overlapping the summit
+  fuji.add(cap);
+
+  fuji.position.set(200, 0, -560);
+  fuji.rotation.y = 0.5;
+  group.add(fuji);
+}
+
+function makeNeonSignTexture(text, color) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 384;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#05060a';
+  ctx.fillRect(0, 0, 128, 384);
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 6;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 20;
+  ctx.strokeRect(12, 12, 104, 360);
+
+  ctx.fillStyle = color;
+  ctx.font = 'bold 60px "Noto Sans CJK JP", "Noto Sans JP", "Yu Gothic", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const chars = Array.from(text);
+  const step = 350 / Math.max(chars.length, 1);
+  chars.forEach((ch, i) => {
+    ctx.fillText(ch, 64, 30 + step * (i + 0.5));
+  });
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+const neonSigns = [
+  { text: '東京', color: '#ff2d95' },
+  { text: 'ドリーム', color: '#00e5ff' },
+  { text: 'サーキット', color: '#ffd400' },
+  { text: 'ネオン', color: '#7c4dff' },
+  { text: 'スピード', color: '#00ff9d' },
+  { text: '夜景', color: '#ff5a2a' },
+];
+
+function addNeonSigns(group, trackCurve, seed) {
+  const rng = seededRandom(seed + 1300);
+  const count = 72;
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x2a2d33, metalness: 0.8, roughness: 0.35 });
+
+  for (let i = 0; i < count; i++) {
+    const t = i / count;
+    const pt = trackCurve.getPointAt(t);
+    const tangent = trackCurve.getTangentAt(t);
+    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+
+    const side = i % 2 === 0 ? 1 : -1;
+    const dist = 10.5 + rng() * 3.5;
+    const px = pt.x + normal.x * dist * side;
+    const pz = pt.z + normal.z * dist * side;
+
+    const sign = neonSigns[Math.floor(rng() * neonSigns.length)];
+    const h = 4.5 + rng() * 5.5;
+    const w = h * 0.34;
+    const clearance = 2.4 + rng() * 1.6;
+
+    // mounting pole
+    const poleH = clearance + h * 0.5;
+    const pole = new THREE.Mesh(new THREE.BoxGeometry(0.16, poleH, 0.16), poleMat);
+    pole.position.set(px, pt.y + poleH / 2, pz);
+    group.add(pole);
+
+    const tex = makeNeonSignTexture(sign.text, sign.color);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      toneMapped: false,
+      side: THREE.DoubleSide,
+    });
+    // over-bright so the sign bleeds through the bloom pass
+    mat.color.setRGB(1.9, 1.9, 1.9);
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    board.position.set(px, pt.y + clearance + h / 2, pz);
+    // face back toward the racing line
+    board.rotation.y = Math.atan2(-normal.x * side, -normal.z * side);
+    group.add(board);
   }
 }
 
