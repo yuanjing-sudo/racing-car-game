@@ -106,16 +106,38 @@ If you only do five things:
 | `ATDCPlayerCar::GetSpeed01()` | motion blur amount, chromatic aberration, FOV, engine pitch |
 | `ATDCPlayerCar::GetSpeedKmh()` / `GetAbsoluteSpeedKmh()` | HUD, audio |
 | `ATDCPlayerCar::GetRearSlipAngleDeg()` | tyre smoke and screech when drifting |
+| `ATDCPlayerCar::GetTyreSlip01()` | the single 0..1 "how hard are the tyres sliding" figure, already blended from slip angle and wheelspin |
 | `ATDCPlayerCar::IsDrifting()` | camera shake, particle burst |
 | `ATDCPlayerCar::GetBrakeInput()` | brake lights |
+| `ATDCPlayerCar::GetEngineRpm()` / `GetCurrentGear()` | engine audio — already consumed by `UTDCEngineAudioComponent` |
 | `UTDCChaseCameraComponent::GetSpeed01()` | convenient from the camera side |
+
+## Missing effect: tyre smoke, and what it would take
+
+Everything else in this project is generated from maths, with no assets. Tyre
+smoke is the exception, because Niagara effects are assets: there is no equivalent
+of Unity's `ParticleSystem`-in-code or Godot's `CPUParticles3D` that can be brought
+up from scratch in UE C++ without authoring a system in the editor.
+
+Two ways to close it, in order of effort:
+
+1. **Author one Niagara system** (a sprite emitter, upward cone, growth over
+   lifetime, a `RadialGradientExponential` sprite), expose the spawn rate as a user
+   parameter, and drive it from `GetTyreSlip01()`. Then place it on each wheel in
+   `ATDCPlayerCar`. That is the path of least resistance and gives the best result.
+2. **A material-free ribbon** of skid-mark quads via the already-enabled
+   `UProceduralMeshComponent`, with a ring buffer re-uploaded each frame. This is
+   roughly 150 lines and gives skid marks rather than smoke. The Unity and Godot
+   ports do not have this either.
 
 ## What this is not
 
 To be blunt about the limits of what was delivered:
 
 - It is **not compiled**. No UE install exists on the device that wrote it.
-- It is **not a game** — no menus, no lap timing, no AI opponents, no sound.
+- It is **not a game** — no menus, no lap timing, no AI opponents. It does now
+  have sound: `UTDCEngineAudioComponent` synthesises the engine, the tyres and the
+  wind at runtime with no audio assets.
 - It is **not photorealistic on its own**. It is the skeleton and the settings;
   the realism comes from the Megascans textures, the City Sample buildings and
   the lighting discipline described above.

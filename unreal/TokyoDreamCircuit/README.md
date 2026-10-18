@@ -29,6 +29,7 @@ Source/
     Public/TDCProceduralRoad.h      road actor
     Public/TDCPlayerCar.h           car pawn
     Public/TDCChaseCameraComponent.h chase camera
+    Public/TDCEngineAudioComponent.h engine/tyre/wind audio, synthesised (AudioMixer)
     Public/TDCGameMode.h            game mode
     Private/*.cpp                   implementations
 Config/
@@ -45,6 +46,38 @@ CITY_SAMPLE.md                      verified Epic City Sample + Houdini procedur
 the four things to download (two of which are not what they sound like), the real
 storage budget, and what the Chaos Vehicle template actually contains.
 
+## Sound
+
+`UTDCEngineAudioComponent` synthesises the engine, the tyres and the wind at
+runtime. **There are no audio assets in this project**, and nothing to import or
+license. It is attached to the car in the car's constructor, so there is no setup
+step: press Play and the car makes a noise.
+
+| Layer | How it is made | What drives it |
+| --- | --- | --- |
+| Engine | A stack of 12 harmonics at the firing frequency of the current rpm | `GetEngineRpm()`, from the car's drivetrain model |
+| Combustion | Filtered noise on the amplitude | Adds the lumpiness an ideal harmonic stack lacks |
+| Tyre scrub | Noise through a two-pole resonator at ~1150 Hz | `GetTyreSlip01()` |
+| Wind roar | Low-passed noise | `GetSpeed01()²`, which is how wind noise physically scales |
+
+The car's drivetrain model is what makes this worth more than a pitch-shifted loop:
+it shifts up at 7200 rpm and down at 3200, so the pitch climbs, drops on the shift,
+and climbs again. That drop is most of what makes engine audio read as real.
+
+Two Unreal-specific notes:
+
+- `OnGenerateAudio` runs on the **audio render thread**. It reads a small set of
+  floats that `TickComponent` copies across once a frame, rather than reaching into
+  the car from the audio thread. One writer and one reader of a float needs no lock,
+  and a lock would block the audio thread.
+- The component renders **mono** and lets Unreal's mixer upmix. If the output comes
+  out at the wrong pitch or half length, `NumChannels` is the knob.
+
+There are no particle effects here: Niagara systems are assets, so a smoke system
+that needs no imported content would mean hand-authoring one in the editor. The
+Unity and Godot ports build their particles in code instead. `REALISM.md` says what
+the Unreal smoke would take.
+
 ## Tuning
 
 Every number is in SI units (metres, m/s, newtons, kg); the conversion to Unreal centimetres happens in one place, `ATDCPlayerCar::ApplyForceAtLocationSI`.
@@ -57,6 +90,8 @@ Every number is in SI units (metres, m/s, newtons, kg); the conversion to Unreal
 | Stable (understeer) | keep `Rear Cornering Stiffness` above `Front Cornering Stiffness` |
 | Wet handling | raise `Wetness` (0 dry → 1 soaked); `Wet Grip` is the soaked coefficient |
 | Steering the wrong way | flip `Lateral Force Sign` to `-1` |
+| Different exhaust note | `Harmonics` (brighter), `Harmonic Rolloff` (warmer), `Firing Pulses Per Revolution` (2 = four-cylinder, 3 = six) on `EngineAudio` |
+| Earlier / later gear shifts | `Shift Up Rpm`, `Shift Down Rpm`, `Gear Count` on the car |
 | Camera too far / too wide | `Base Distance`, `Base FOV`, `Max FOV` on the chase camera |
 
 `Wetness` is the interesting one: it blends dry grip toward `WetGrip`, so you can drive it from a weather system and watch cornering speed fall in real time.

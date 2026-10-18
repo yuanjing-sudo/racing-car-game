@@ -6,6 +6,7 @@
 
 class UStaticMeshComponent;
 class UTDCChaseCameraComponent;
+class UTDCEngineAudioComponent;
 
 /**
  * ATDCPlayerCar
@@ -51,6 +52,10 @@ public:
 	/** Spring-arm chase camera. Replaces the plain SpringArm + Camera pair. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Car")
 	TObjectPtr<UTDCChaseCameraComponent> ChaseCamera;
+
+	/** Engine, tyre and wind audio, synthesised at runtime. No audio assets. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Car")
+	TObjectPtr<UTDCEngineAudioComponent> EngineAudio;
 
 	// ---------------------------------------------------------------------
 	// Handling
@@ -178,6 +183,23 @@ public:
 	bool bPhysicsEnabled = true;
 
 	// ---------------------------------------------------------------------
+	// Drivetrain, for audio and telemetry
+	// ---------------------------------------------------------------------
+
+	/** Forward gears available to the drivetrain model that drives the engine
+	 *  audio. It is not a real gearbox: no clutch, no shift time. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Car|Drivetrain", meta = (ClampMin = "1", ClampMax = "8"))
+	int32 GearCount = 6;
+
+	/** Engine speed at which the audio model shifts up, in rpm. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Car|Drivetrain", meta = (ClampMin = "1000.0"))
+	float ShiftUpRpm = 7200.0f;
+
+	/** Engine speed at which the audio model shifts down, in rpm. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Car|Drivetrain", meta = (ClampMin = "500.0"))
+	float ShiftDownRpm = 3200.0f;
+
+	// ---------------------------------------------------------------------
 	// Telemetry. Bind these to the HUD, audio and post FX.
 	// ---------------------------------------------------------------------
 
@@ -206,6 +228,24 @@ public:
 	/** 0..1 brake pedal, for brake lights. */
 	UFUNCTION(BlueprintPure, Category = "Car|Telemetry")
 	float GetBrakeInput() const { return BrakeInput; }
+
+	/** -MaxReverseThrottle..1 throttle pedal, for engine audio. */
+	UFUNCTION(BlueprintPure, Category = "Car|Telemetry")
+	float GetThrottleInput() const { return ThrottleInput; }
+
+	/** Engine speed in rpm, from the lightweight drivetrain model. Good enough
+	 *  to drive engine audio: it climbs to ShiftUpRpm, drops on each shift, and
+	 *  sits at idle when the car is stopped. */
+	UFUNCTION(BlueprintPure, Category = "Car|Telemetry")
+	float GetEngineRpm() const { return EngineRpm; }
+
+	/** Selected gear, 1-based, from the same model. */
+	UFUNCTION(BlueprintPure, Category = "Car|Telemetry")
+	int32 GetCurrentGear() const { return CurrentGear; }
+
+	/** 0..1 how hard the tyres are sliding, for smoke and skid effects. */
+	UFUNCTION(BlueprintPure, Category = "Car|Telemetry")
+	float GetTyreSlip01() const { return TyreSlip01; }
 
 	// ---------------------------------------------------------------------
 	// Input. Bound in SetupPlayerInputComponent; also callable from Blueprint
@@ -237,6 +277,9 @@ private:
 	/** Update the visual wheel meshes (spin and steer). */
 	void UpdateWheelVisuals(float DeltaTime, float ForwardSpeedMs);
 
+	/** Step the lightweight drivetrain model that drives engine audio. */
+	void UpdateDrivetrain(float ForwardSpeedMs, float LateralSpeedMs, float Speed01, float DeltaSeconds);
+
 	// Inputs, all 0..1 unless noted.
 	float ThrottleInput = 0.0f;
 	float SteeringInput = 0.0f; // -1..1
@@ -247,4 +290,13 @@ private:
 	float SteerAngle = 0.0f;    // radians
 	float RearSlipAngle = 0.0f; // radians
 	float WheelSpin = 0.0f;     // accumulated visual rotation, radians
+
+	// Drivetrain telemetry. Read by UTDCEngineAudioComponent.
+	float EngineRpm = 900.0f;
+	int32 CurrentGear = 1;
+	float TyreSlip01 = 0.0f;
+
+	/** Ratios the drivetrain model steps through. Fourth is near 1:1. */
+	static constexpr int32 MaxGears = 8;
+	static const float GearRatios[MaxGears];
 };

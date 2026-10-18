@@ -1,6 +1,7 @@
 #include "TDCPlayerCar.h"
 
 #include "TDCChaseCameraComponent.h"
+#include "TDCEngineAudioComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/InputComponent.h"
 #include "Engine/StaticMesh.h"
@@ -18,7 +19,15 @@ namespace
 	/** The placeholder body cube is 62 cm tall, so its centre is 31 cm above its
 	 *  base. Wheels are placed so their bottoms line up with the base. */
 	constexpr float PlaceholderBodyHalfHeight = 31.0f;
+
+	/** Final drive ratio for the audio model's gearbox. */
+	constexpr float FinalDrive = 3.4f;
 }
+
+const float ATDCPlayerCar::GearRatios[ATDCPlayerCar::MaxGears] =
+{
+	3.2f, 2.1f, 1.5f, 1.15f, 0.92f, 0.75f, 0.63f, 0.55f
+};
 
 ATDCPlayerCar::ATDCPlayerCar()
 {
@@ -87,6 +96,11 @@ ATDCPlayerCar::ATDCPlayerCar()
 	ChaseCamera->SetupAttachment(Body);
 	// Keep the camera's speed blend in step with the car's top speed.
 	ChaseCamera->ReferenceTopSpeedKmh = MaxSpeedKmh;
+
+	// Engine, tyre and wind audio. Synthesised, so there is nothing to import:
+	// the component finds its owner in BeginPlay and reads the telemetry above.
+	EngineAudio = CreateDefaultSubobject<UTDCEngineAudioComponent>(TEXT("EngineAudio"));
+	EngineAudio->SetupAttachment(Body);
 }
 
 void ATDCPlayerCar::BeginPlay()
@@ -335,7 +349,51 @@ void ATDCPlayerCar::Tick(float DeltaSeconds)
 		ApplyForceAtLocationSI(-Up * Downforce, Body->GetComponentLocation(), DeltaSeconds);
 	}
 
+	UpdateDrivetrain(VLong, VLat, SpeedFraction, DeltaSeconds);
 	UpdateWheelVisuals(DeltaSeconds, VLong);
+}
+
+void ATDCPlayerCar::UpdateDrivetrain(float ForwardSpeedMs, float LateralSpeedMs, float Speed01, float DeltaSeconds)
+{
+	// A lightweight gearbox model. Not a real transmission - no clutch, no torque
+	// converter, no shift time - but it produces the two things engine audio needs
+	// to read as real: a pitch that tracks road speed, and a drop on every upshift.
+	const float WheelRadiusM = WheelRadius / CmPerMetre;
+	const float WheelCircumference = FMath::Max(0.01f, 2.0f * PI * WheelRadiusM);
+	const float WheelRevolutionsPerSecond = FMath::Abs(ForwardSpeedMs) / WheelCircumference;
+
+	const int32 LastGear = FMath::Clamp(GearCount, 1, MaxGears);
+	CurrentGear = FMath::Clamp(CurrentGear, 1, LastGear);
+
+	float Ratio = GearRatios[CurrentGear - 1];
+	float TargetRpm = WheelRevolutionsPerSecond * 60.0f * Ratio * FinalDrive;
+
+	if (ForwardSpeedMs >= 0.0f && CurrentGear < LastGear && TargetRpm > ShiftUpRpm)
+	{
+		++CurrentGear;
+	}
+	else if (CurrentGear > 1 && TargetRpm < ShiftDownRpm && ThrottleInput < 0.9f)
+	{
+		// Only drop a gear when the driver is not asking for full power, so the
+		// audio does not hunt on and off the shift point.
+		--CurrentGear;
+	}
+
+	Ratio = GearRatios[CurrentGear - 1];
+	TargetRpm = WheelRevolutionsPerSecond * 60.0f * Ratio * FinalDrive;
+
+	// Below walking pace, sit at idle rather than at ~0 rpm.
+	EngineRpm = FMath::FInterpTo(EngineRpm, FMath::Clamp(TargetRpm, 850.0f, 8000.0f), DeltaSeconds, 12.0f);
+
+	// 0..1 how hard the tyres are sliding, combining a slip-angle term with a
+	// wheelspin term, so a slow, hugely sideways car reads as sliding as much as a
+	// fast one scrubbing.
+	const float SlipAngleTerm = FMath::Clamp(FMath::Abs(RearSlipAngle) / FMath::DegreesToRadians(30.0f), 0.0f, 1.0f);
+	const float SlipSpeedTerm = FMath::Clamp(FMath::Abs(LateralSpeedMs) / 12.0f, 0.0f, 1.0f);
+	const float WheelspinTerm = FMath::Clamp(
+		FMath::Abs(ForwardSpeedMs) * (1.0f - Speed01 * 0.7f) / 18.0f, 0.0f, 1.0f) * FMath::Max(0.0f, ThrottleInput);
+
+	TyreSlip01 = FMath::Clamp(FMath::Max(SlipAngleTerm * SlipSpeedTerm, WheelspinTerm), 0.0f, 1.0f);
 }
 
 void ATDCPlayerCar::UpdateWheelVisuals(float DeltaTime, float ForwardSpeedMs)

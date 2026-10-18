@@ -15,7 +15,10 @@ public class TokyoDreamCircuit : ModuleRules
 			"Engine",
 			"InputCore",
 			"ProceduralMeshComponent",
-			"PhysicsCore"
+			"PhysicsCore",
+			// USynthComponent, for the runtime-synthesised engine audio. No audio
+			// assets are used anywhere in this project.
+			"AudioMixer"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
