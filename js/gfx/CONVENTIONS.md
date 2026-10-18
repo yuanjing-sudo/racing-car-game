@@ -43,7 +43,8 @@ js/gfx/
   shadows.js          shadow management
   reflections.js      planar + probe reflections
   props.js            road furniture & architecture
-  decals.js           road markings & dynamic decals
+  decals.js          road markings & dynamic decals
+  dynamicprops.js     animated world: air traffic, turbines, fountains, searchlights
   geometry.js         geometry helper library
   car.js              detailed procedural hypercar
   materials.js        advanced PBR material library

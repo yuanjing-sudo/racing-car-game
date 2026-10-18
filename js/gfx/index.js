@@ -10,6 +10,7 @@ import { createDynamicProps } from './dynamicprops.js';
 import { createDecals } from './decals.js';
 import { createWeatherFx } from './weatherfx.js';
 import { createReflections } from './reflections.js';
+import { createCinematic } from './cinematic.js';
 import { updateMaterials } from './materials.js';
 
 /**
@@ -104,6 +105,7 @@ const DEFAULT_SETTINGS = {
   decals: true,
   weatherfx: true,
   reflections: true,
+  cinematic: true,
   filmGrain: 0.02,
   exposureGain: 1.0,
   temperature: 0.0,
@@ -197,6 +199,12 @@ export function createGraphicsEngine(opts = {}) {
   // car paint, chrome, glass and wet asphalt have something to reflect.
   modules.reflections = settings.reflections
     ? safe(() => createReflections({ renderer, scene, quality: settings.quality }), 'reflections', failures)
+    : null;
+
+  // The camera director. It never takes the camera unless a sequence is playing;
+  // otherwise it only contributes auto-focus, a lens punch and impact shake.
+  modules.cinematic = settings.cinematic
+    ? safe(() => createCinematic({ camera, seed: 7 }), 'cinematic', failures)
     : null;
 
   /**
@@ -322,6 +330,9 @@ export function createGraphicsEngine(opts = {}) {
     // Rebuild the trackside content for the new theme (only when a track curve
     // was supplied — theme colour changes alone do not need a rebuild).
     if (theme.curve) buildTrackContent(theme);
+    if (modules.cinematic) {
+      modules.cinematic.setTrack({ curve: theme.curve || null, width: theme.width });
+    }
     if (modules.weatherfx) modules.weatherfx.setWeather(state.weather);
 
     // Re-bake the environment probe for the new lighting conditions.
@@ -420,6 +431,8 @@ export function createGraphicsEngine(opts = {}) {
       sunColor: ctx.sunColor,
       camera: ctx.camera || camera,
       focus: ctx.focus,
+      heading: ctx.heading,
+      gForceLat: ctx.gForceLat,
       settings,
       letterbox: ctx.letterbox,
       damage01: ctx.damage01,
@@ -441,6 +454,19 @@ export function createGraphicsEngine(opts = {}) {
       modules.volumetrics.setParams({ density: (state.fogScale) * 0.9 + 0.1, groundY: ctx.groundY != null ? ctx.groundY : 0 });
       modules.volumetrics.update(dt, full);
     }
+    // The camera director runs after the host has placed the camera for the
+    // frame: it may drive a shot outright, or just add auto-focus and a lens
+    // kick. Either way it fills focusDistance/letterbox for the post chain
+    // below, unless the caller supplied its own.
+    if (modules.cinematic) {
+      modules.cinematic.update(dt, full);
+      modules.cinematic.applyToCamera(dt, full);
+      if (ctx.letterbox == null) {
+        full.letterbox = modules.cinematic.letterbox > 0.002 ? modules.cinematic.letterbox : undefined;
+      }
+      if (ctx.focusDistance == null) full.focusDistance = modules.cinematic.focusDistance;
+    }
+
     if (modules.post) {
       full.exposure = settings.exposureGain;
       modules.post.update(dt, full);
@@ -509,6 +535,7 @@ export function createGraphicsEngine(opts = {}) {
     get decals() { return decals; },
     get weatherfx() { return modules.weatherfx; },
     get reflections() { return modules.reflections; },
+    get cinematic() { return modules.cinematic; },
     get ownsSky() { return !!modules.sky; },
   };
 }

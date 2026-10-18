@@ -127,7 +127,10 @@ motivated world layer on top of the existing track and scenery:
 | **World** | `sky.js`, `volumetrics.js`, `lighting.js`, `shadows.js` | raymarched atmosphere with sun/moon discs, height fog with light shafts, a pooled street-light/neon rig, cascaded shadow maps |
 | **Post** | `post/*.js` | GTAO, screen-space reflections, god rays, bloom, lens flare, depth of field, motion blur, colour grade, SMAA — chained in linear HDR, tone-mapped once at the end |
 | **Content** | `props.js`, `geometry.js`, `decals.js`, `weatherfx.js`, `particles.js` | start-light gantry, sponsor gantries, grandstands with a crowd, pit building, catch fencing, tyre walls, marshal posts, billboards, floodlights; ring-buffered skid trails; splash ripples, wind streaks and lightning; six particle pools |
+| **Life** | `dynamicprops.js` | helicopters patrolling with turning rotors, blinking strobes and a searchlight that paints the fog; a blimp with a scrolling sponsor banner; drifting hot-air balloons; wind turbines; camera drones; fountain jets; radar dishes; sweeping searchlights. The bird flock is a single `InstancedMesh` |
+| **Camera** | `cinematic.js` | a shot director (orbit, trackside pan, ground dolly, crane, wheel macro, flyby, top-down) with cuts, easing and seeded variety; auto-focus driven into the DOF pass; fadeable 2.39:1 letterbox; requested slow motion; trauma-model impact shake and a nitro lens punch |
 | **Look** | `materials.js`, `reflections.js` | procedural PBR library with a shared wetness blend; PMREM image-based lighting baked per theme |
+| **Hero** | `car.js` | lofted hypercar body, glass canopy, sculpted fenders, intakes, canards, a multi-element wing, straked diffuser, a full visible cockpit and per-style wheels with spokes, barrel, vented disc and caliper |
 
 The engine is defensive: each sub-system is created behind a guard, so if one
 fails to initialise the rest of the game carries on unchanged. Quality tiers
@@ -152,7 +155,8 @@ js/
   gfx/                advanced graphics engine (see above)
     index.js sky.js volumetrics.js lighting.js shadows.js
     materials.js reflections.js props.js geometry.js decals.js
-    particles.js weatherfx.js CONVENTIONS.md
+    particles.js weatherfx.js dynamicprops.js cinematic.js car.js
+    CONVENTIONS.md
     post/             HDR post-processing chain (9 effects + orchestrator)
 unreal/TokyoDreamCircuit/   Unreal Engine 5.5 C++ starter project
 unity/TokyoDreamCircuit/    Unity 6.3 LTS C# port (same car and road maths)

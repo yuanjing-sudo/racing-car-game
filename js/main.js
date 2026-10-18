@@ -221,6 +221,8 @@ class Game {
       speed01: this.speed01 != null ? this.speed01 : (phys ? clamp(phys.speed / 95, 0, 1) : 0),
       damage01: this.damage01 || 0,
       focus: this.playerCar && this.playerCar.visible ? this.playerCar.position : undefined,
+      heading: phys ? phys.heading : 0,
+      gForceLat: phys ? phys.gForceLat : 0,
       groundY: 0,
       // The race director's phase, mapped to the vocabulary the props module
       // understands ('countdown' fills the start lights, 'go' turns them green).
@@ -482,7 +484,14 @@ class Game {
 
   render() {
     const rawDt = this.clock.getDelta();
-    const dt = Math.min(rawDt, 0.05);
+    let dt = Math.min(rawDt, 0.05);
+    // The director can ask for slow motion for a finish or replay beat. Only
+    // the simulated step is scaled — `rawDt` still drives the race clock, so
+    // lap times and finishing positions stay honest.
+    if (this.gfx && this.gfx.cinematic) {
+      const ts = this.gfx.cinematic.timeScale;
+      if (ts < 0.999) dt *= ts;
+    }
     this.rawDt = Math.min(rawDt, 0.25);
     this.elapsedTime += dt;
     this.updateFPS(dt);
@@ -541,6 +550,13 @@ class Game {
       }
       this.gfx.settings.speed01 = this.speed01;
     }
+
+    // Nitro pushes the lens wide and jolts it — the classic "boost" beat.
+    if (this.gfx && this.gfx.cinematic) {
+      if (this.nitro.active && !this._nitroWasActive) this.gfx.cinematic.punch(0.85);
+      else if (this.nitro.active) this.gfx.cinematic.punch(dt * 1.6);
+    }
+    this._nitroWasActive = !!this.nitro.active;
 
     const rolling = driving ? clamp(phys.speed / 4, 0, 1) : 0;
     this.updateCarLights(dt, phys.brake * rolling, speed01);
@@ -619,6 +635,8 @@ class Game {
     if (speedDiff > 20) {
       this.cameraController.addShake(0.3);
       this.audio.playEffect('collision', 0.5);
+      // the director turns the speed loss into trauma + a lens kick
+      if (this.gfx && this.gfx.cinematic) this.gfx.cinematic.impact(speedDiff);
     }
 
     this.updatePlayerVisuals(dt, result);
@@ -721,9 +739,13 @@ class Game {
     if (event === 'lap') {
       this.hud.showMessage(`Lap ${this.race.currentLap}/${this.race.totalLaps}`, 2000);
       this.audio.playEffect('lap_complete');
+      if (this.gfx && this.gfx.cinematic) this.gfx.cinematic.punch(0.35);
     } else if (event === 'finish') {
       this.hud.showMessage(`Finished! Position: ${this.race.racePosition}${this.ordinal(this.race.racePosition)}`, 5000);
       this.audio.playEffect('lap_complete');
+      // cut to the director for the finish: bars in, slow motion, a crane and
+      // an orbit, then hand the camera back
+      if (this.gfx && this.gfx.cinematic) this.gfx.cinematic.playSequence('finish');
     }
   }
 
