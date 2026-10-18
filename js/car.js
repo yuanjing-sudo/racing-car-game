@@ -1,5 +1,14 @@
 import * as THREE from 'three';
 import { lerp, clamp, createGradientTexture } from './utils.js';
+import {
+  getPaintMaterial,
+  getGlassMaterial,
+  getChromeMaterial,
+  getCarbonMaterial,
+  getTireMaterial,
+  getRimMaterial,
+  getLightBeamMaterial,
+} from './materials.js';
 
 export const CAR_PAINT_COLORS = [
   { name: 'Rosso Corsa', color: 0xcc0000 },
@@ -43,53 +52,12 @@ export function createCarModel(config = {}) {
   car.userData.wheels = [];
   car.userData.parts = {};
 
-  const paintMat = new THREE.MeshPhysicalMaterial({
-    color: paintColor,
-    metalness: 0.85,
-    roughness: 0.12,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.03,
-    reflectivity: 1.0,
-    envMapIntensity: 1.5,
-  });
-
-  const chromeMat = new THREE.MeshPhysicalMaterial({
-    color: 0xffffff,
-    metalness: 1.0,
-    roughness: 0.0,
-    envMapIntensity: 2.0,
-  });
-
-  const glassMat = new THREE.MeshPhysicalMaterial({
-    color: 0x111122,
-    metalness: 0.1,
-    roughness: 0.0,
-    transmission: 0.85,
-    thickness: 0.3,
-    transparent: true,
-    opacity: windowTint + 0.2,
-    ior: 1.5,
-  });
-
-  const tireMat = new THREE.MeshStandardMaterial({
-    color: 0x1a1a1a,
-    roughness: 0.92,
-    metalness: 0.0,
-  });
-
-  const rimMat = new THREE.MeshPhysicalMaterial({
-    color: rimColor,
-    metalness: 1.0,
-    roughness: 0.15,
-    envMapIntensity: 1.8,
-  });
-
-  const carbonMat = new THREE.MeshPhysicalMaterial({
-    color: 0x222222,
-    metalness: 0.3,
-    roughness: 0.4,
-    clearcoat: 0.5,
-  });
+  const paintMat = getPaintMaterial(paintColor);
+  const chromeMat = getChromeMaterial();
+  const glassMat = getGlassMaterial(windowTint);
+  const tireMat = getTireMaterial();
+  const rimMat = getRimMaterial(rimColor);
+  const carbonMat = getCarbonMaterial();
 
   const bodyShape = new THREE.Shape();
   bodyShape.moveTo(-1.0, 0);
@@ -241,10 +209,11 @@ export function createCarModel(config = {}) {
   const headlightGeo = new THREE.SphereGeometry(0.12, 16, 8, 0, Math.PI);
   const headlightMat = new THREE.MeshStandardMaterial({
     color: 0xffffee,
-    emissive: 0xffffcc,
-    emissiveIntensity: 3.0,
+    emissive: 0xffffe0,
+    emissiveIntensity: 4.0,
     transparent: true,
-    opacity: 0.9,
+    opacity: 0.95,
+    toneMapped: false,
   });
   const headlightL = new THREE.Mesh(headlightGeo, headlightMat);
   headlightL.position.set(-0.65, 0.68, 2.15);
@@ -254,21 +223,56 @@ export function createCarModel(config = {}) {
   headlightR.rotation.y = -0.2;
   car.add(headlightL, headlightR);
   car.userData.parts.headlights = [headlightL, headlightR];
+  car.userData.mats = car.userData.mats || {};
+  car.userData.mats.headlightMat = headlightMat;
+
+  // --- forward beams -------------------------------------------
+  const beams = [];
+  [-0.65, 0.65].forEach((x) => {
+    const spot = new THREE.SpotLight(0xfff2cf, 0, 70, Math.PI / 6.5, 0.55, 1.1);
+    spot.position.set(x, 0.7, 2.1);
+    spot.castShadow = false;
+    const target = new THREE.Object3D();
+    target.position.set(x, 0.1, 40);
+    car.add(target);
+    spot.target = target;
+    car.add(spot);
+    beams.push(spot);
+
+    const len = 26;
+    const coneGeo = new THREE.ConeGeometry(Math.tan(Math.PI / 9) * len, len, 20, 1, true);
+    coneGeo.translate(0, -len / 2, 0);
+    coneGeo.rotateX(-Math.PI / 2);
+    const cone = new THREE.Mesh(coneGeo, getLightBeamMaterial());
+    cone.position.set(x, 0.68, 2.2);
+    cone.renderOrder = 2;
+    car.add(cone);
+  });
+  car.userData.parts.headlightBeams = beams;
 
   const taillightMat = new THREE.MeshStandardMaterial({
-    color: 0xff0000,
-    emissive: 0xff0000,
-    emissiveIntensity: 2.0,
+    color: 0xff1a1a,
+    emissive: 0xff0a0a,
+    emissiveIntensity: 2.5,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.9,
+    toneMapped: false,
+    side: THREE.DoubleSide,
   });
-  const taillightGeo = new THREE.BoxGeometry(0.35, 0.1, 0.04);
+  const taillightGeo = new THREE.BoxGeometry(0.42, 0.11, 0.04);
   const taillightL = new THREE.Mesh(taillightGeo, taillightMat);
   taillightL.position.set(-0.65, 0.72, -2.15);
   const taillightR = new THREE.Mesh(taillightGeo, taillightMat);
   taillightR.position.set(0.65, 0.72, -2.15);
   car.add(taillightL, taillightR);
   car.userData.parts.taillights = [taillightL, taillightR];
+  car.userData.mats.taillightMat = taillightMat;
+
+  // thin LED strip tying the two lamp clusters together
+  const ledStripGeo = new THREE.BoxGeometry(1.15, 0.035, 0.03);
+  const ledStrip = new THREE.Mesh(ledStripGeo, taillightMat);
+  ledStrip.position.set(0, 0.72, -2.16);
+  car.add(ledStrip);
 
   const mirrorGeo = new THREE.BoxGeometry(0.12, 0.06, 0.08);
   const mirrorStemGeo = new THREE.BoxGeometry(0.03, 0.02, 0.15);

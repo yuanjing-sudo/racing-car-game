@@ -1,5 +1,11 @@
 import * as THREE from 'three';
-import { createNoise2D, fbm, lerp, clamp, randomRange } from './utils.js';
+import { createNoise2D, fbm, lerp, clamp, randomRange, createRadialTexture } from './utils.js';
+import {
+  getRoadMaterial,
+  getRoadLineMaterial,
+  getCurbMaterial,
+  getBarrierMaterial,
+} from './materials.js';
 
 export const TRACK_THEMES = [
   { id: 'alpine', name: 'Alpine Pass', desc: 'Mountain hairpins with snow peaks' },
@@ -20,15 +26,26 @@ export function createTrack(theme = 'alpine', seed = 42) {
   const trackWidth = 14 + randomRange(-2, 2);
   const elevation = getTrackElevationFactor(theme) * 1.6;
 
-  for (let i = 0; i < numPoints; i++) {
-    const baseAngle = (i / numPoints) * Math.PI * 2;
-    const wobble = Math.sin(i * 0.7) * 0.15 + Math.cos(i * 1.3) * 0.1;
-    const angle = baseAngle + wobble;
-    const baseRadius = 110 + fbm(noise, i * 0.025, 0) * 90 + Math.sin(i * 0.5) * 20;
-    const r = baseRadius + Math.sin(angle * 3) * 25 + Math.cos(angle * 5) * 12;
+  // A high-speed circuit needs sweeping, low-curvature corners. The layout is
+  // built from integer harmonics of the loop angle so it closes perfectly and
+  // stays smooth; the old version stacked a fast radial sine (period ~12
+  // points) on top of per-point FBM noise, which produced zero-radius cusps
+  // and 47 m median corners that nothing could take above ~60 km/h.
+  const baseRadius = 250;
 
-    const x = Math.cos(angle) * r;
-    const z = Math.sin(angle) * r;
+  for (let i = 0; i < numPoints; i++) {
+    const t = i / numPoints;
+    const angle = t * Math.PI * 2;
+
+    const radius =
+      baseRadius +
+      Math.sin(angle * 2) * 40 +
+      Math.sin(angle * 3 + 0.7) * 22 +
+      Math.sin(angle * 5 + 1.3) * 8 +
+      Math.sin(angle * 7 + 2.1) * 3;
+
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
     const y = getTerrainHeight(x, z, theme, noise) * elevation;
 
     points.push(new THREE.Vector3(x, y, z));
@@ -38,7 +55,8 @@ export function createTrack(theme = 'alpine', seed = 42) {
   trackData.curve = curve;
   trackData.length = curve.getLength();
 
-  const divisions = 520;
+  // More divisions than before so the tighter corner radii stay smooth.
+  const divisions = 800;
   const trackPoints = curve.getSpacedPoints(divisions);
   trackData.trackPoints = trackPoints;
 
@@ -60,7 +78,11 @@ export function createTrack(theme = 'alpine', seed = 42) {
   const curbSegments = buildCurbSegments(curve, trackWidth, divisions, gapZones, theme);
   curbSegments.forEach(mesh => { mesh.position.y = 0.02; trackGroup.add(mesh); });
 
-  const edgeSegments = buildEdgeSegments(curve, trackWidth, divisions, gapZones);
+  const lineSegments = buildRoadLines(curve, trackWidth, divisions, gapZones);
+  lineSegments.forEach(mesh => { mesh.receiveShadow = true; trackGroup.add(mesh); });
+  trackGroup.add(buildCenterDashes(curve, divisions, gapZones));
+
+  const edgeSegments = buildEdgeSegments(curve, trackWidth, divisions, gapZones, theme);
   edgeSegments.forEach(mesh => { mesh.position.y = -0.01; trackGroup.add(mesh); });
 
   createBarriers(trackGroup, curve, trackWidth, divisions, theme, gapZones);
@@ -102,6 +124,8 @@ function createTrackMesh(curve, t0, t1, width, divisions, theme) {
   shape.lineTo(halfW, 0);
   const geo = new THREE.ExtrudeGeometry(shape, { steps: segDivisions, bevelEnabled: false });
   const pos = geo.attributes.position;
+  const uv = geo.attributes.uv;
+
   for (let i = 0; i < pos.count; i++) {
     const idx = Math.floor(i / 2);
     const rawT = t0 + (t1 - t0) * (idx / Math.max(1, segDivisions - 1));
@@ -112,9 +136,15 @@ function createTrackMesh(curve, t0, t1, width, divisions, theme) {
     const isLeft = i % 2 === 0;
     const offset = isLeft ? -halfW : halfW;
     pos.setXYZ(i, pt.x + normal.x * offset, pt.y, pt.z + normal.z * offset);
+
+    // Deterministic UVs so the wet-asphalt maps tile correctly:
+    // u across the width, v along the length of the lap.
+    if (uv) {
+      uv.setXY(i, isLeft ? 0 : width * 0.25, t * 260);
+    }
   }
   geo.computeVertexNormals();
-  return new THREE.Mesh(geo, getTrackMaterial(theme));
+  return new THREE.Mesh(geo, getRoadMaterial(theme));
 }
 
 function buildCurbSegments(curve, width, divisions, gapZones, theme) {
@@ -141,27 +171,75 @@ function buildCurbSegments(curve, width, divisions, gapZones, theme) {
   return meshes;
 }
 
-function buildEdgeSegments(curve, width, divisions, gapZones) {
+/**
+ * Build a flat strip that follows the curve at a fixed lateral offset.
+ * The plane's local X carries the strip width, which we preserve so the
+ * strip actually has area (the old implementation collapsed it to a line).
+ */
+function buildLineStrip(curve, t0, t1, divisions, offset, halfWidth, material, yLift) {
+  const segDivisions = Math.max(2, Math.floor(divisions * (t1 - t0)));
+  const geo = new THREE.PlaneGeometry(halfWidth * 2, 1, 1, segDivisions);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const idx = Math.floor(i / 2);
+    const rawT = t0 + (t1 - t0) * (idx / Math.max(1, segDivisions - 1));
+    const t = isFinite(rawT) ? clamp(rawT, 0, 1) : 0;
+    const pt = curve.getPointAt(t) || new THREE.Vector3();
+    const tangent = curve.getTangentAt(t) || new THREE.Vector3(0, 0, 1);
+    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+    const lateral = offset + pos.getX(i);
+    pos.setXYZ(i, pt.x + normal.x * lateral, pt.y + yLift, pt.z + normal.z * lateral);
+  }
+  geo.computeVertexNormals();
+  return new THREE.Mesh(geo, material);
+}
+
+function buildEdgeSegments(curve, width, divisions, gapZones, theme) {
   const meshes = [];
-  const edgeWidth = 0.5;
+  const mat = getRoadMaterial(theme);
   for (const [t0, t1] of segmentRanges(divisions, gapZones)) {
-    const segDivisions = Math.max(2, Math.floor(divisions * (t1 - t0)));
-    const geo = new THREE.PlaneGeometry(edgeWidth * 2, 1, 1, segDivisions);
-    const pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const idx = Math.floor(i / 2);
-      const rawT = t0 + (t1 - t0) * (idx / Math.max(1, segDivisions - 1));
-      const t = isFinite(rawT) ? clamp(rawT, 0, 1) : 0;
-      const pt = curve.getPointAt(t) || new THREE.Vector3();
-      const tangent = curve.getTangentAt(t) || new THREE.Vector3(0, 0, 1);
-      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-      const offset = width / 2 + edgeWidth / 2;
-      pos.setXYZ(i, pt.x + normal.x * offset, pt.y + 0.01, pt.z + normal.z * offset);
-    }
-    geo.computeVertexNormals();
-    meshes.push(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.9 })));
+    meshes.push(buildLineStrip(curve, t0, t1, divisions, width / 2 + 0.55, 0.3, mat, 0.01));
   }
   return meshes;
+}
+
+/** Solid painted lane edges running just inside the tarmac. */
+function buildRoadLines(curve, width, divisions, gapZones) {
+  const meshes = [];
+  const mat = getRoadLineMaterial();
+  for (const [t0, t1] of segmentRanges(divisions, gapZones)) {
+    meshes.push(buildLineStrip(curve, t0, t1, divisions, width / 2 - 0.55, 0.09, mat, 0.02));
+    meshes.push(buildLineStrip(curve, t0, t1, divisions, -(width / 2 - 0.55), 0.09, mat, 0.02));
+  }
+  return meshes;
+}
+
+/** Dashed centre line, instanced for a single draw call. */
+function buildCenterDashes(curve, divisions, gapZones) {
+  const step = 6;
+  const mats = [];
+  for (let i = 0; i < divisions; i += step) {
+    const t = i / divisions;
+    if (isInGapZone(t, gapZones)) continue;
+    mats.push(t);
+  }
+
+  const geo = new THREE.PlaneGeometry(0.18, 2.4);
+  geo.rotateX(-Math.PI / 2);
+  const mesh = new THREE.InstancedMesh(geo, getRoadLineMaterial(), Math.max(1, mats.length));
+  const dummy = new THREE.Object3D();
+
+  mats.forEach((t, i) => {
+    const pt = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t);
+    dummy.position.set(pt.x, pt.y + 0.022, pt.z);
+    dummy.rotation.set(0, Math.atan2(tangent.x, tangent.z), 0);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+  });
+  mesh.count = mats.length;
+  mesh.instanceMatrix.needsUpdate = true;
+  return mesh;
 }
 
 function getTrackElevationFactor(theme) {
@@ -189,127 +267,46 @@ export function getTerrainHeight(x, z, theme, noise) {
   }
 }
 
-function createTrackGeometry(curve, width, divisions) {
-  const shape = new THREE.Shape();
-  const halfW = width / 2;
-  shape.moveTo(-halfW, 0);
-  shape.lineTo(halfW, 0);
-
-  const extrudeSettings = { steps: divisions, bevelEnabled: false };
-  const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-
-  const pos = geo.attributes.position;
-  const pts = curve.getSpacedPoints(divisions);
-
-  for (let i = 0; i < pos.count; i++) {
-    const idx = Math.floor(i / 2);
-    const pt = pts[Math.min(idx, pts.length - 1)];
-    const tangent = curve.getTangentAt(idx / divisions);
-    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-
-    const isLeft = i % 2 === 0;
-    const offset = isLeft ? -halfW : halfW;
-
-    pos.setXYZ(i,
-      pt.x + normal.x * offset,
-      pt.y,
-      pt.z + normal.z * offset
-    );
-  }
-
-  geo.computeVertexNormals();
-  return geo;
-}
-
-function createCurbGeometry(curve, width, divisions, theme) {
-  const curbWidth = 1.0;
-  const halfW = width / 2;
-
-  const geo = new THREE.PlaneGeometry(curbWidth, 1, 1, divisions);
-  const pos = geo.attributes.position;
-  const pts = curve.getSpacedPoints(divisions);
-
-  for (let i = 0; i < pos.count; i++) {
-    const idx = Math.floor((i / 2));
-    const pt = pts[Math.min(idx, pts.length - 1)];
-    const tangent = curve.getTangentAt(idx / divisions);
-    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-
-    const isTop = i % 2 === 0;
-    const offset = isTop ? -(halfW + curbWidth / 2) : -(halfW - curbWidth / 2);
-
-    pos.setXYZ(i,
-      pt.x + normal.x * offset,
-      pt.y + 0.03,
-      pt.z + normal.z * offset
-    );
-  }
-
-  geo.computeVertexNormals();
-  return geo;
-}
-
-function createEdgeGeometry(curve, width, divisions) {
-  const edgeWidth = 0.5;
-  const halfW = width / 2;
-
-  const geo = new THREE.PlaneGeometry(edgeWidth * 2, 1, 1, divisions);
-  const pos = geo.attributes.position;
-  const pts = curve.getSpacedPoints(divisions);
-
-  for (let i = 0; i < pos.count; i++) {
-    const idx = Math.floor((i / 2));
-    const pt = pts[Math.min(idx, pts.length - 1)];
-    const tangent = curve.getTangentAt(idx / divisions);
-    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-
-    const offset = halfW + edgeWidth / 2;
-
-    pos.setXYZ(i,
-      pt.x + normal.x * offset,
-      pt.y + 0.01,
-      pt.z + normal.z * offset
-    );
-  }
-
-  geo.computeVertexNormals();
-  return geo;
-}
-
 function createBarriers(group, curve, width, divisions, theme, gapZones) {
   const barrierHeight = 0.8;
   const halfW = width / 2 + 1.5;
-
-  const leftGeo = new THREE.BoxGeometry(0.3, barrierHeight, 2);
-  const rightGeo = new THREE.BoxGeometry(0.3, barrierHeight, 2);
-
-  const barrierMat = getBarrierMaterial(theme);
-
   const step = 4;
+
+  const slots = [];
   for (let i = 0; i < divisions; i += step) {
     const t = i / divisions;
     if (isInGapZone(t, gapZones)) continue;
+    slots.push(t);
+  }
 
+  const geo = new THREE.BoxGeometry(0.32, barrierHeight, 2);
+  const mesh = new THREE.InstancedMesh(geo, getBarrierMaterial(theme), Math.max(1, slots.length * 2));
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  const dummy = new THREE.Object3D();
+  let n = 0;
+  for (const t of slots) {
     const pt = curve.getPointAt(t);
     const tangent = curve.getTangentAt(t);
     const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-
     const angle = Math.atan2(tangent.x, tangent.z);
 
-    const leftBarrier = new THREE.Mesh(leftGeo, barrierMat);
-    leftBarrier.position.copy(pt).add(normal.clone().multiplyScalar(-halfW));
-    leftBarrier.position.y = pt.y + barrierHeight / 2;
-    leftBarrier.rotation.y = angle;
-    leftBarrier.castShadow = true;
-    group.add(leftBarrier);
+    dummy.rotation.set(0, angle, 0);
 
-    const rightBarrier = new THREE.Mesh(rightGeo, barrierMat);
-    rightBarrier.position.copy(pt).add(normal.clone().multiplyScalar(halfW));
-    rightBarrier.position.y = pt.y + barrierHeight / 2;
-    rightBarrier.rotation.y = angle;
-    rightBarrier.castShadow = true;
-    group.add(rightBarrier);
+    dummy.position.copy(pt).add(normal.clone().multiplyScalar(-halfW));
+    dummy.position.y = pt.y + barrierHeight / 2;
+    dummy.updateMatrix();
+    mesh.setMatrixAt(n++, dummy.matrix);
+
+    dummy.position.copy(pt).add(normal.clone().multiplyScalar(halfW));
+    dummy.position.y = pt.y + barrierHeight / 2;
+    dummy.updateMatrix();
+    mesh.setMatrixAt(n++, dummy.matrix);
   }
+  mesh.count = n;
+  mesh.instanceMatrix.needsUpdate = true;
+  group.add(mesh);
 }
 
 function createStartFinish(group, curve, width, theme) {
@@ -398,20 +395,50 @@ function createTrackDecorations(group, curve, width, theme, seed, gapZones) {
     } else if (decoType < 0.5) {
       addCone(group, decoPos);
     } else if (decoType < 0.7) {
-      addLightPole(group, decoPos);
+      addLightPole(group, decoPos, normal.clone().multiplyScalar(-side));
     } else {
       addBanner(group, decoPos, tangent, rng);
     }
   }
 }
 
+/* Shared resources for track-side props (built once, reused). */
+const DECO = {};
+
+function deco() {
+  if (DECO.ready) return DECO;
+  DECO.tireGeo = new THREE.TorusGeometry(0.3, 0.12, 8, 16);
+  DECO.tireMat = new THREE.MeshStandardMaterial({ color: 0x1b1b1b, roughness: 0.92 });
+  DECO.coneGeo = new THREE.ConeGeometry(0.2, 0.5, 10);
+  DECO.coneMat = new THREE.MeshStandardMaterial({ color: 0xff5f1f, roughness: 0.55, emissive: 0x180600 });
+  DECO.poleGeo = new THREE.CylinderGeometry(0.08, 0.1, 5, 8);
+  DECO.poleMat = new THREE.MeshStandardMaterial({ color: 0x3a3d42, metalness: 0.85, roughness: 0.35 });
+  DECO.lampGeo = new THREE.BoxGeometry(0.5, 0.16, 0.34);
+  DECO.lampMat = new THREE.MeshStandardMaterial({
+    color: 0xfff4d0,
+    emissive: 0xffe9b0,
+    emissiveIntensity: 6.0,
+    toneMapped: false,
+  });
+  DECO.poolGeo = new THREE.PlaneGeometry(11, 11);
+  DECO.poolGeo.rotateX(-Math.PI / 2);
+  DECO.poolMat = new THREE.MeshBasicMaterial({
+    map: createRadialTexture(128, 'rgba(255,236,190,0.5)', 'rgba(255,236,190,0)'),
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  DECO.ready = true;
+  return DECO;
+}
+
 function addTireStack(group, pos, rng) {
+  const d = deco();
   const count = 3 + Math.floor(rng() * 5);
-  const tireGeo = new THREE.TorusGeometry(0.3, 0.12, 8, 16);
-  const tireMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
 
   for (let i = 0; i < count; i++) {
-    const tire = new THREE.Mesh(tireGeo, tireMat);
+    const tire = new THREE.Mesh(d.tireGeo, d.tireMat);
     tire.position.set(pos.x, pos.y + 0.12 + i * 0.22, pos.z);
     tire.rotation.x = Math.PI / 2 + (rng() - 0.5) * 0.3;
     tire.castShadow = true;
@@ -420,36 +447,44 @@ function addTireStack(group, pos, rng) {
 }
 
 function addCone(group, pos) {
-  const coneGeo = new THREE.ConeGeometry(0.2, 0.5, 8);
-  const coneMat = new THREE.MeshStandardMaterial({ color: 0xff6600, roughness: 0.6 });
-  const cone = new THREE.Mesh(coneGeo, coneMat);
+  const d = deco();
+  const cone = new THREE.Mesh(d.coneGeo, d.coneMat);
   cone.position.set(pos.x, pos.y + 0.25, pos.z);
   cone.castShadow = true;
   group.add(cone);
 }
 
-function addLightPole(group, pos) {
-  const poleGeo = new THREE.CylinderGeometry(0.08, 0.1, 5, 8);
-  const poleMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.8 });
-  const pole = new THREE.Mesh(poleGeo, poleMat);
+/**
+ * Street lamp. The emissive head is picked up by the bloom pass so it
+ * reads as a real light source, and an additive pool decal fakes the
+ * glow spilling onto the wet tarmac (the classic Lumen look) without
+ * paying for a real point light per pole.
+ */
+function addLightPole(group, pos, toTrack) {
+  const d = deco();
+  const dir = (toTrack || new THREE.Vector3(1, 0, 0)).clone().normalize();
+
+  const pole = new THREE.Mesh(d.poleGeo, d.poleMat);
   pole.position.set(pos.x, pos.y + 2.5, pos.z);
   pole.castShadow = true;
   group.add(pole);
 
-  const armGeo = new THREE.BoxGeometry(1.5, 0.08, 0.08);
-  const arm = new THREE.Mesh(armGeo, poleMat);
-  arm.position.set(pos.x + 0.7, pos.y + 5, pos.z);
+  const arm = new THREE.Mesh(d.poleGeo, d.poleMat);
+  arm.scale.set(0.6, 0.6, 0.6);
+  arm.rotation.z = Math.PI / 2;
+  arm.position.set(pos.x + dir.x * 0.75, pos.y + 4.9, pos.z + dir.z * 0.75);
+  arm.rotation.y = Math.atan2(dir.x, dir.z);
+  arm.scale.set(0.16, 1.4, 0.16);
   group.add(arm);
 
-  const lightGeo = new THREE.BoxGeometry(0.4, 0.15, 0.3);
-  const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0xffffcc, emissiveIntensity: 2 });
-  const light = new THREE.Mesh(lightGeo, lightMat);
-  light.position.set(pos.x + 1.4, pos.y + 4.9, pos.z);
-  group.add(light);
+  const lamp = new THREE.Mesh(d.lampGeo, d.lampMat);
+  lamp.position.set(pos.x + dir.x * 1.45, pos.y + 4.85, pos.z + dir.z * 1.45);
+  lamp.rotation.y = Math.atan2(dir.x, dir.z);
+  group.add(lamp);
 
-  const pointLight = new THREE.PointLight(0xffffcc, 3, 20);
-  pointLight.position.set(pos.x + 1.4, pos.y + 4.8, pos.z);
-  group.add(pointLight);
+  const pool = new THREE.Mesh(d.poolGeo, d.poolMat);
+  pool.position.set(pos.x + dir.x * 1.45, pos.y + 0.05, pos.z + dir.z * 1.45);
+  group.add(pool);
 }
 
 function addBanner(group, pos, tangent, rng) {
@@ -499,39 +534,6 @@ function createCheckpoints(trackData, curve, theme) {
       bestTime: null,
       targetTime: 15 + s * 3,
     });
-  }
-}
-
-function getTrackMaterial(theme) {
-  switch (theme) {
-    case 'city': return new THREE.MeshStandardMaterial({ color: 0x333338, roughness: 0.85, metalness: 0.05 });
-    case 'desert': return new THREE.MeshStandardMaterial({ color: 0xc2a060, roughness: 0.95, metalness: 0.0 });
-    case 'forest': return new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9, metalness: 0.0 });
-    case 'alpine': return new THREE.MeshStandardMaterial({ color: 0x666670, roughness: 0.88, metalness: 0.02 });
-    default: return new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.9, metalness: 0.0 });
-  }
-}
-
-function getCurbMaterial(theme) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 128; canvas.height = 16;
-  const ctx = canvas.getContext('2d');
-  for (let i = 0; i < 16; i++) {
-    ctx.fillStyle = i % 2 === 0 ? '#cc0000' : '#ffffff';
-    ctx.fillRect(i * 8, 0, 8, 16);
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.repeat.set(20, 1);
-  return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7 });
-}
-
-function getBarrierMaterial(theme) {
-  switch (theme) {
-    case 'city': return new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.4, metalness: 0.6 });
-    case 'desert': return new THREE.MeshStandardMaterial({ color: 0xaa8844, roughness: 0.8 });
-    case 'forest': return new THREE.MeshStandardMaterial({ color: 0x446644, roughness: 0.7 });
-    default: return new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.5, metalness: 0.3 });
   }
 }
 

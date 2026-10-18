@@ -123,8 +123,8 @@ export class VehiclePhysics {
 
     if (this.engineRPM > this.redlineRPM * 0.95 && this.gear < this.gearRatios.length - 1) {
       this.shiftUp();
-    }
-    if (this.engineRPM < this.idleRPM * 1.5 && this.gear > 0 && this.forwardSpeed < 1) {
+    } else if (this.engineRPM < this.redlineRPM * 0.5 && this.gear > 0 && !this.isShifting) {
+      // hysteresis (down at 50% vs up at 95%) keeps the box from hunting
       this.shiftDown();
     }
 
@@ -141,6 +141,9 @@ export class VehiclePhysics {
 
     const totalGrip = surfaceGrip * this.gripMultiplier * (1 - this.damageAmount * 0.4);
     const maxLatForce = totalGrip * this.mass * 9.81;
+
+    const downforce = 0.5 * 1.225 * this.downforceCoeff * 2.5 * this.speed * this.speed;
+    const effectiveWeight = this.mass * 9.81 + downforce;
 
     const cornerStiffness = this.forwardSpeed > 0 ?
       this.cornerStiffnessF : this.cornerStiffnessR;
@@ -162,17 +165,18 @@ export class VehiclePhysics {
     this.slipAngles[2] = slipAngleR;
     this.slipAngles[3] = slipAngleR;
 
-    const tireGripF = cornerStiffness * totalGrip;
-    const tireGripR = cornerStiffness * totalGrip;
+    // Cornering stiffness must scale with the vertical load carried by the
+    // axle, otherwise the lateral forces come out a few newtons strong and
+    // the car simply cannot turn (it slides straight while yawing).
+    const axleGrip = cornerStiffness * totalGrip * effectiveWeight * 0.5;
+    const tireGripF = axleGrip;
+    const tireGripR = axleGrip * (this.cornerStiffnessR / this.cornerStiffnessF);
 
     const latForceF = clamp(-slipAngleF * tireGripF, -maxLatForce * 0.6, maxLatForce * 0.6);
     const latForceR = clamp(-slipAngleR * tireGripR, -maxLatForce * 0.6, maxLatForce * 0.6);
 
     this.isDrifting = Math.abs(slipAngleR) > 0.15 && this.speed > 5;
     this.driftAngle = this.isDrifting ? slipAngleR : 0;
-
-    const downforce = 0.5 * 1.225 * this.downforceCoeff * 2.5 * this.speed * this.speed;
-    const effectiveWeight = this.mass * 9.81 + downforce;
 
     this.wheelLoads = [
       effectiveWeight * 0.25 * (1 - totalLongForce / effectiveWeight * 0.5),
@@ -203,7 +207,10 @@ export class VehiclePhysics {
     this.velocity.add(newForwardDir.multiplyScalar(accelLon * dt));
     this.velocity.add(newRightDir.multiplyScalar(accelLat * dt));
 
-    const velDamp = this.isDrifting ? 0.98 : 0.995;
+    // Aero drag is already modelled above; this is only a gentle numerical
+    // scrub. The old 0.995/frame value removed ~26% of speed every second
+    // and pinned the car at 58 km/h in first gear.
+    const velDamp = this.isDrifting ? 0.9992 : 0.99985;
     this.velocity.multiplyScalar(Math.pow(velDamp, dt * 60));
 
     if (this.handbrake) {

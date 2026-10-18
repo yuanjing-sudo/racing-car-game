@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { createNoise2D, fbm, randomRange, randomInt, lerp } from './utils.js';
+import { createNoise2D, lerp } from './utils.js';
 import { getTerrainHeight } from './track.js';
+import { getTerrainMaterial, applyWindSway } from './materials.js';
 
 export function createScenery(theme = 'alpine', seed = 42, trackCurve = null) {
   const scenery = new THREE.Group();
@@ -12,7 +13,11 @@ export function createScenery(theme = 'alpine', seed = 42, trackCurve = null) {
   terrain.receiveShadow = true;
   scenery.add(terrain);
 
-  addTrees(scenery, theme, noise, trackCurve, seed);
+  if (theme === 'city') {
+    addBlossomTrees(scenery, trackCurve, seed);
+  } else {
+    addTrees(scenery, theme, noise, trackCurve, seed);
+  }
   addRocks(scenery, theme, noise, trackCurve, seed);
   if (theme === 'city') addCityBuildings(scenery, trackCurve, seed);
   if (theme === 'alpine') addSnowParticles(scenery, trackCurve);
@@ -70,16 +75,80 @@ function smoothstep(edge0, edge1, x) {
   return t * t * (3 - 2 * t);
 }
 
-function getTerrainMaterial(theme) {
-  switch (theme) {
-    case 'alpine': return new THREE.MeshStandardMaterial({ color: 0x9aa5b1, roughness: 0.9, metalness: 0.1 });
-    case 'coastal': return new THREE.MeshStandardMaterial({ color: 0xd4c49e, roughness: 0.95, metalness: 0.0 });
-    case 'desert': return new THREE.MeshStandardMaterial({ color: 0xe8c98a, roughness: 0.98, metalness: 0.0 });
-    case 'forest': return new THREE.MeshStandardMaterial({ color: 0x4a8a3a, roughness: 0.95, metalness: 0.0 });
-    case 'city': return new THREE.MeshStandardMaterial({ color: 0x7a7a8a, roughness: 0.85, metalness: 0.1 });
-    case 'countryside': return new THREE.MeshStandardMaterial({ color: 0x5aa02e, roughness: 0.9, metalness: 0.0 });
-    default: return new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9 });
+/* ------------------------------------------------------------------ *
+ * Cherry-blossom trees for the city circuit.
+ * Each tree is a trunk plus a cluster of pink canopy blobs, all
+ * instanced. The canopy material gets SpeedTree-style wind sway, so
+ * the blossom canopies ripple as you tear past.
+ * ------------------------------------------------------------------ */
+function addBlossomTrees(group, trackCurve, seed) {
+  const rng = seededRandom(seed + 100);
+  const count = 110;
+
+  const trunkGeo = new THREE.CylinderGeometry(0.16, 0.3, 3.2, 7);
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x40302a, roughness: 0.88 });
+
+  const canopyGeo = new THREE.IcosahedronGeometry(1, 1);
+  const canopyMat = applyWindSway(
+    new THREE.MeshStandardMaterial({
+      color: 0xffc2d6,
+      roughness: 0.85,
+      metalness: 0.0,
+      emissive: 0x2a0d18,
+      flatShading: true,
+    }),
+    2.2,
+    'blossom'
+  );
+
+  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
+  const canopy = new THREE.InstancedMesh(canopyGeo, canopyMat, count * 4);
+  trunks.castShadow = true;
+  canopy.castShadow = true;
+  canopy.receiveShadow = false;
+
+  const dummy = new THREE.Object3D();
+  let ci = 0;
+
+  for (let i = 0; i < count; i++) {
+    const t = i / count;
+    const pt = trackCurve.getPointAt(t);
+    const tangent = trackCurve.getTangentAt(t);
+    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+
+    const side = i % 2 === 0 ? 1 : -1;
+    const dist = 14 + rng() * 34;
+    const x = pt.x + normal.x * dist * side;
+    const z = pt.z + normal.z * dist * side;
+
+    const scale = 0.9 + rng() * 0.9;
+    const y = pt.y;
+
+    dummy.position.set(x, y + 1.6 * scale, z);
+    dummy.rotation.set(0, rng() * Math.PI * 2, 0);
+    dummy.scale.set(scale, scale, scale);
+    dummy.updateMatrix();
+    trunks.setMatrixAt(i, dummy.matrix);
+
+    for (let b = 0; b < 4; b++) {
+      const r = 1.5 + rng() * 0.9;
+      dummy.position.set(
+        x + (rng() - 0.5) * 2.2 * scale,
+        y + (3.3 + rng() * 1.9) * scale,
+        z + (rng() - 0.5) * 2.2 * scale
+      );
+      dummy.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
+      dummy.scale.set(r * scale, r * 0.75 * scale, r * scale);
+      dummy.updateMatrix();
+      canopy.setMatrixAt(ci++, dummy.matrix);
+    }
   }
+
+  trunks.count = count;
+  canopy.count = ci;
+  trunks.instanceMatrix.needsUpdate = true;
+  canopy.instanceMatrix.needsUpdate = true;
+  group.add(trunks, canopy);
 }
 
 function addTrees(group, theme, noise, trackCurve, seed) {
@@ -90,16 +159,22 @@ function addTrees(group, theme, noise, trackCurve, seed) {
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5a3a20, roughness: 0.9 });
 
   const pineGeo = new THREE.ConeGeometry(1.4, 3.5, 10);
-  const leafMat = new THREE.MeshStandardMaterial({
-    color: theme === 'forest' ? 0x2e7d32 : theme === 'countryside' ? 0x4caf50 : 0x2d5a27,
-    roughness: 0.85,
-  });
+  const leafMat = applyWindSway(
+    new THREE.MeshStandardMaterial({
+      color: theme === 'forest' ? 0x2e7d32 : theme === 'countryside' ? 0x4caf50 : 0x2d5a27,
+      roughness: 0.85,
+    }),
+    1.2,
+    'pine'
+  );
 
   const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
   const leafMesh = new THREE.InstancedMesh(pineGeo, leafMat, treeCount * 2);
   trunkMesh.castShadow = true;
   leafMesh.castShadow = true;
 
+  const dummy = new THREE.Object3D();
+  let trunkIdx = 0;
   let leafIdx = 0;
   for (let i = 0; i < treeCount; i++) {
     const x = (rng() - 0.5) * 500;
@@ -110,12 +185,11 @@ function addTrees(group, theme, noise, trackCurve, seed) {
     const y = getTerrainHeight(x, z, theme, noise);
     const scale = 0.6 + rng() * 1.2;
 
-    const dummy = new THREE.Object3D();
     dummy.position.set(x, y + scale, z);
     dummy.scale.setScalar(scale);
-    dummy.rotation.y = rng() * Math.PI * 2;
+    dummy.rotation.set(0, rng() * Math.PI * 2, 0);
     dummy.updateMatrix();
-    trunkMesh.setMatrixAt(i, dummy.matrix);
+    trunkMesh.setMatrixAt(trunkIdx++, dummy.matrix);
 
     dummy.position.set(x, y + scale * 2, z);
     dummy.updateMatrix();
@@ -127,7 +201,7 @@ function addTrees(group, theme, noise, trackCurve, seed) {
     leafMesh.setMatrixAt(leafIdx++, dummy.matrix);
   }
 
-  trunkMesh.count = treeCount;
+  trunkMesh.count = trunkIdx;
   leafMesh.count = leafIdx;
   trunkMesh.instanceMatrix.needsUpdate = true;
   leafMesh.instanceMatrix.needsUpdate = true;
@@ -146,6 +220,8 @@ function addRocks(group, theme, noise, trackCurve, seed) {
   rocks.castShadow = true;
   rocks.receiveShadow = true;
 
+  const dummy = new THREE.Object3D();
+  let n = 0;
   for (let i = 0; i < rockCount; i++) {
     const x = (rng() - 0.5) * 400;
     const z = (rng() - 0.5) * 400;
@@ -155,22 +231,88 @@ function addRocks(group, theme, noise, trackCurve, seed) {
     const y = getTerrainHeight(x, z, theme, noise);
     const scale = 0.3 + rng() * 2.0;
 
-    const dummy = new THREE.Object3D();
     dummy.position.set(x, y + scale * 0.3, z);
     dummy.scale.set(scale, scale * (0.5 + rng() * 0.5), scale);
     dummy.rotation.set(rng() * 0.5, rng() * Math.PI * 2, rng() * 0.5);
     dummy.updateMatrix();
-    rocks.setMatrixAt(i, dummy.matrix);
+    rocks.setMatrixAt(n++, dummy.matrix);
   }
 
-  rocks.count = rockCount;
+  rocks.count = n;
   rocks.instanceMatrix.needsUpdate = true;
   group.add(rocks);
 }
 
+/* Shared emissive window sheet for the downtown towers. */
+function createWindowTexture(rng) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#05060a';
+  ctx.fillRect(0, 0, 128, 256);
+
+  const warm = ['#ffd48a', '#ffbf5e', '#fff1c9', '#ffae52'];
+  const cool = ['#9fd0ff', '#c9e6ff', '#7fb6ff', '#dff0ff'];
+
+  for (let wy = 0; wy < 24; wy++) {
+    for (let wx = 0; wx < 12; wx++) {
+      if (rng() > 0.42) {
+        const pal = rng() > 0.5 ? warm : cool;
+        ctx.fillStyle = pal[Math.floor(rng() * pal.length)];
+        ctx.globalAlpha = 0.6 + rng() * 0.4;
+        ctx.fillRect(4 + wx * 10, 4 + wy * 10, 7, 6);
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
+}
+
 function addCityBuildings(group, trackCurve, seed) {
   const rng = seededRandom(seed + 300);
-  const buildingCount = 140;
+  const buildingCount = 150;
+
+  // --- tower masses (single draw call) --------------------------
+  const massMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.5,
+    metalness: 0.4,
+    envMapIntensity: 1.35,
+  });
+  const masses = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), massMat, buildingCount);
+  masses.castShadow = true;
+  masses.receiveShadow = true;
+
+  // --- lit window sheets ---------------------------------------
+  const winGeo = new THREE.PlaneGeometry(1, 1);
+  const winTex = createWindowTexture(rng);
+  const winMat = new THREE.MeshStandardMaterial({
+    map: winTex,
+    emissive: 0xffffff,
+    emissiveMap: winTex,
+    emissiveIntensity: 1.9,
+    roughness: 0.4,
+    metalness: 0.0,
+  });
+  const windows = new THREE.InstancedMesh(winGeo, winMat, buildingCount);
+  windows.castShadow = false;
+
+  // --- rooftop neon --------------------------------------------
+  const neonGeo = new THREE.BoxGeometry(1, 1, 1);
+  const neonMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+  neonMat.vertexColors = false;
+  const neon = new THREE.InstancedMesh(neonGeo, neonMat, buildingCount);
+  neon.castShadow = false;
+
+  const dummy = new THREE.Object3D();
+  const col = new THREE.Color();
+  const neonPalette = [0x00e5ff, 0xff2d95, 0xffd400, 0x7c4dff, 0x00ff9d];
 
   for (let i = 0; i < buildingCount; i++) {
     const t = i / buildingCount;
@@ -179,53 +321,53 @@ function addCityBuildings(group, trackCurve, seed) {
     const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
     const side = i % 2 === 0 ? 1 : -1;
-    const dist = 18 + rng() * 60;
+    const dist = 20 + rng() * 62;
 
     const bx = pt.x + normal.x * dist * side;
     const bz = pt.z + normal.z * dist * side;
 
-    const width = 10 + rng() * 25;
-    const depth = 10 + rng() * 25;
-    const height = 40 + rng() * 160;
+    const width = 10 + rng() * 26;
+    const depth = 10 + rng() * 26;
+    const height = 46 + rng() * 190;
 
-    const hue = 0.55 + rng() * 0.25;
-    const buildMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color().setHSL(hue, 0.4, 0.2 + rng() * 0.3),
-      roughness: 0.6,
-      metalness: 0.4,
-    });
-    const building = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), buildMat);
-    building.position.set(bx, height / 2, bz);
-    building.castShadow = true;
-    building.receiveShadow = true;
-    group.add(building);
+    // mass
+    dummy.position.set(bx, height / 2, bz);
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.set(width, height, depth);
+    dummy.updateMatrix();
+    masses.setMatrixAt(i, dummy.matrix);
+    col.setHSL(0.56 + rng() * 0.2, 0.22, 0.13 + rng() * 0.18);
+    masses.setColorAt(i, col);
 
-    const windowGeo = new THREE.PlaneGeometry(width * 0.85, height * 0.75);
-    const windowCanvas = document.createElement('canvas');
-    windowCanvas.width = 128; windowCanvas.height = 256;
-    const wCtx = windowCanvas.getContext('2d');
-    wCtx.fillStyle = '#0a0a12';
-    wCtx.fillRect(0, 0, 128, 256);
-    for (let wy = 0; wy < 24; wy++) {
-      for (let wx = 0; wx < 12; wx++) {
-        if (rng() > 0.35) {
-          wCtx.fillStyle = rng() > 0.5 ? '#ffe082' : '#bbdefb';
-          wCtx.fillRect(4 + wx * 10, 4 + wy * 10, 7, 7);
-        }
-      }
-    }
-    const windowTex = new THREE.CanvasTexture(windowCanvas);
-    const windowMat = new THREE.MeshBasicMaterial({ map: windowTex });
-    const windowMesh = new THREE.Mesh(windowGeo, windowMat);
-    windowMesh.position.set(bx, height * 0.5, bz + depth / 2 + 0.02);
-    group.add(windowMesh);
+    // window sheet on the face pointing back toward the track
+    const toTrack = normal.clone().multiplyScalar(-side);
+    dummy.position.set(
+      bx + toTrack.x * (depth / 2 + 0.03),
+      height * 0.5,
+      bz + toTrack.z * (depth / 2 + 0.03)
+    );
+    dummy.rotation.set(0, Math.atan2(toTrack.x, toTrack.z), 0);
+    dummy.scale.set(width * 0.88, height * 0.82, 1);
+    dummy.updateMatrix();
+    windows.setMatrixAt(i, dummy.matrix);
 
-    const roofGeo = new THREE.BoxGeometry(width * 1.1, 2, depth * 1.1);
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8, roughness: 0.2 });
-    const roof = new THREE.Mesh(roofGeo, roofMat);
-    roof.position.set(bx, height + 1, bz);
-    group.add(roof);
+    // neon band near the crown
+    dummy.position.set(bx, height + 1.2, bz);
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.set(width * 0.9, 0.9, depth * 0.9);
+    dummy.updateMatrix();
+    neon.setMatrixAt(i, dummy.matrix);
+    col.setHex(neonPalette[Math.floor(rng() * neonPalette.length)]);
+    neon.setColorAt(i, col);
   }
+
+  masses.instanceMatrix.needsUpdate = true;
+  windows.instanceMatrix.needsUpdate = true;
+  neon.instanceMatrix.needsUpdate = true;
+  if (masses.instanceColor) masses.instanceColor.needsUpdate = true;
+  if (neon.instanceColor) neon.instanceColor.needsUpdate = true;
+
+  group.add(masses, windows, neon);
 }
 
 function addSnowParticles(group, trackCurve) {
@@ -259,18 +401,28 @@ function addSnowParticles(group, trackCurve) {
 function addGrassPatches(group, theme, noise, trackCurve, seed) {
   if (theme === 'city' || theme === 'desert') return;
   const rng = seededRandom(seed + 400);
-  const sprigCount = theme === 'countryside' ? 150 : theme === 'forest' ? 200 : 60;
+  const sprigCount = theme === 'countryside' ? 900 : theme === 'forest' ? 1200 : 400;
 
-  const grassGeo = new THREE.PlaneGeometry(0.14, 0.5);
-  const grassMat = new THREE.MeshStandardMaterial({
-    color: theme === 'forest' ? 0x3a9a3a : 0x6ab04c,
-    roughness: 0.95,
-    side: THREE.DoubleSide,
-    transparent: true,
-    opacity: 0.95,
-  });
+  const grassGeo = new THREE.PlaneGeometry(0.16, 0.55);
+  grassGeo.translate(0, 0.275, 0); // base sits on the ground for clean sway
+  const grassMat = applyWindSway(
+    new THREE.MeshStandardMaterial({
+      color: theme === 'forest' ? 0x3a9a3a : 0x6ab04c,
+      roughness: 0.95,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.95,
+    }),
+    2.6,
+    'grass'
+  );
 
-  const grassGroup = new THREE.Group();
+  const mesh = new THREE.InstancedMesh(grassGeo, grassMat, sprigCount);
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+
+  const dummy = new THREE.Object3D();
+  let n = 0;
 
   for (let i = 0; i < sprigCount; i++) {
     const x = (rng() - 0.5) * 400;
@@ -279,19 +431,17 @@ function addGrassPatches(group, theme, noise, trackCurve, seed) {
     if (trackCurve && isTooCloseToTrack(x, z, trackCurve, 18)) continue;
 
     const y = getTerrainHeight(x, z, theme, noise);
-    const sprig = new THREE.Mesh(grassGeo, grassMat);
-    sprig.position.set(x, y + 0.25, z);
-    sprig.rotation.y = rng() * Math.PI * 2;
-    sprig.rotation.x = (rng() - 0.5) * 0.4;
-    sprig.rotation.z = (rng() - 0.5) * 0.3;
-    sprig.scale.setScalar(0.6 + rng() * 1.0);
-    sprig.castShadow = true;
-    sprig.receiveShadow = true;
-    sprig.userData = { baseY: sprig.position.y, sway: rng() * Math.PI * 2, swaySpeed: 1 + rng() * 2 };
-    grassGroup.add(sprig);
+    dummy.position.set(x, y, z);
+    dummy.rotation.set((rng() - 0.5) * 0.4, rng() * Math.PI * 2, (rng() - 0.5) * 0.3);
+    const s = 0.6 + rng() * 1.0;
+    dummy.scale.set(s, s, s);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(n++, dummy.matrix);
   }
 
-  group.add(grassGroup);
+  mesh.count = n;
+  mesh.instanceMatrix.needsUpdate = true;
+  group.add(mesh);
 }
 
 function addClouds(group, theme, seed) {
@@ -342,6 +492,8 @@ function addCacti(group, noise, trackCurve, seed) {
   const cacti = new THREE.InstancedMesh(cactusGeo, cactusMat, cactusCount);
   cacti.castShadow = true;
 
+  const dummy = new THREE.Object3D();
+  let n = 0;
   for (let i = 0; i < cactusCount; i++) {
     const x = (rng() - 0.5) * 400;
     const z = (rng() - 0.5) * 400;
@@ -351,14 +503,13 @@ function addCacti(group, noise, trackCurve, seed) {
     const y = getTerrainHeight(x, z, 'desert', noise);
     const scale = 0.5 + rng() * 1.5;
 
-    const dummy = new THREE.Object3D();
     dummy.position.set(x, y + scale, z);
     dummy.scale.set(scale, scale, scale);
     dummy.updateMatrix();
-    cacti.setMatrixAt(i, dummy.matrix);
+    cacti.setMatrixAt(n++, dummy.matrix);
   }
 
-  cacti.count = cactusCount;
+  cacti.count = n;
   cacti.instanceMatrix.needsUpdate = true;
   group.add(cacti);
 }
@@ -391,6 +542,8 @@ function addMushrooms(group, noise, trackCurve, seed) {
   const stems = new THREE.InstancedMesh(stemGeo, stemMat, count);
   const caps = new THREE.InstancedMesh(capGeo, capMat, count);
 
+  const dummy = new THREE.Object3D();
+  let n = 0;
   for (let i = 0; i < count; i++) {
     const x = (rng() - 0.5) * 300;
     const z = (rng() - 0.5) * 300;
@@ -400,19 +553,19 @@ function addMushrooms(group, noise, trackCurve, seed) {
     const y = getTerrainHeight(x, z, 'forest', noise);
     const scale = 0.5 + rng() * 1.5;
 
-    const dummy = new THREE.Object3D();
-    dummy.position.set(x, y + 0.15 * scale, z);
     dummy.scale.setScalar(scale);
+    dummy.position.set(x, y + 0.15 * scale, z);
     dummy.updateMatrix();
-    stems.setMatrixAt(i, dummy.matrix);
+    stems.setMatrixAt(n, dummy.matrix);
 
     dummy.position.y += 0.25 * scale;
     dummy.updateMatrix();
-    caps.setMatrixAt(i, dummy.matrix);
+    caps.setMatrixAt(n, dummy.matrix);
+    n++;
   }
 
-  stems.count = count;
-  caps.count = count;
+  stems.count = n;
+  caps.count = n;
   stems.instanceMatrix.needsUpdate = true;
   caps.instanceMatrix.needsUpdate = true;
   group.add(stems, caps);

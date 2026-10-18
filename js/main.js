@@ -4,7 +4,7 @@ import { createDefaultPhysics } from './physics.js';
 import { createTrack, TRACK_THEMES, getTerrainHeight } from './track.js';
 import { createScenery } from './scenery.js';
 import { createScene, createCamera, createRenderer } from './environment.js';
-import { createPostFX, updatePostFXSize, setBloomIntensity } from './postfx.js';
+import { createPostFX, updatePostFXSize, setBloomIntensity, setSpeedEffects } from './postfx.js';
 import { InputManager } from './controls.js';
 import { HUD } from './hud.js';
 import { AudioManager } from './audio.js';
@@ -16,6 +16,7 @@ import { GameMenu } from './menu.js';
 import { RaceManager } from './race.js';
 import { AIDirector } from './ai.js';
 import { clamp, damp, formatTime, lerp } from './utils.js';
+import { updateWindTime } from './materials.js';
 
 class Game {
   constructor() {
@@ -237,14 +238,19 @@ class Game {
     this.cameraController.reset(gridPos.position);
 
     this.updateLoader(60, 'Spawning AI opponents...');
-    this.aiDirector = new AIDirector(this.scene, this.trackData, settings.difficulty);
-    this.aiDirector.numOpponents = settings.opponents || 10;
+    this.aiDirector = new AIDirector(this.scene, this.trackData, settings.difficulty, settings.opponents);
 
     this.updateLoader(75, 'Configuring weather...');
     const isCityTrack = settings.track === 'city';
     this.weather.setSeasonCycle(isCityTrack, 0);
     if (!isCityTrack && settings.weather) this.weather.setWeather(settings.weather);
-    if (settings.timeOfDay) this.weather.setTimeOfDay(settings.timeOfDay);
+    if (settings.timeOfDay != null) {
+      this.weather.setTimeOfDay(settings.timeOfDay);
+    } else if (isCityTrack) {
+      // downtown defaults to a neon-lit night so the emissive windows,
+      // wet asphalt and headlights all do their thing
+      this.weather.setTimeOfDay(21);
+    }
 
     this.updateLoader(85, 'Starting race...');
     this.race.start(settings);
@@ -351,6 +357,7 @@ class Game {
     this.rawDt = Math.min(rawDt, 0.25);
     this.elapsedTime += dt;
     this.updateFPS(dt);
+    updateWindTime(dt);
 
     switch (this.state) {
       case 'menu': this.updateMenu(dt); break;
@@ -362,7 +369,49 @@ class Game {
 
     this.weather.update(dt, this.camera.position);
     this.particles.update(dt);
+    this.updateCinematic(dt, rawDt);
     this.postFX.composer.render();
+  }
+
+  /**
+   * Drive the speed-reactive grade, brake lights and headlights.
+   * Top speed in this build is ~95 m/s (342 km/h), which maps to 1.0.
+   */
+  updateCinematic(dt, rawDt) {
+    const phys = this.playerPhysics;
+    const speed01 = clamp(phys.speed / 95, 0, 1);
+    const driving = this.state === 'racing' || this.state === 'freeroam';
+    const extra = driving && this.nitro.active ? 0.35 : 0;
+
+    setSpeedEffects(this.postFX, driving ? speed01 : 0, dt, extra);
+
+    const rolling = driving ? clamp(phys.speed / 4, 0, 1) : 0;
+    this.updateCarLights(dt, phys.brake * rolling, speed01);
+  }
+
+  updateCarLights(dt, brakeAmount, speed01) {
+    const mats = this.playerCar.userData.mats;
+    if (!mats) return;
+
+    // taillights flare under braking and shimmer at speed (kept hot
+    // so the bloom pass smears them across the wet tarmac)
+    if (mats.taillightMat) {
+      const target = 2.2 + brakeAmount * 9.0 + speed01 * 0.8;
+      mats.taillightMat.emissiveIntensity = damp(mats.taillightMat.emissiveIntensity, target, 12, dt);
+    }
+
+    // headlights come on after dark
+    const hour = this.weather.timeOfDay;
+    const night = hour < 6.6 || hour > 18.4;
+    const beams = this.playerCar.userData.parts.headlightBeams;
+    if (beams) {
+      const target = night && this.playerCar.visible ? 6.5 : 0;
+      beams.forEach((b) => { b.intensity = damp(b.intensity, target, 4, dt); });
+    }
+    if (mats.headlightMat) {
+      const target = night ? 6.0 : 3.2;
+      mats.headlightMat.emissiveIntensity = damp(mats.headlightMat.emissiveIntensity, target, 4, dt);
+    }
   }
 
   updateMenu(dt) {

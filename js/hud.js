@@ -1,5 +1,9 @@
 import { formatTime, formatSpeed, clamp, lerp } from './utils.js';
 
+// Full-scale speedometer reading. The dial is calibrated to this so the
+// needle keeps meaningful resolution at the game's ~360 km/h top speed.
+const MAX_SPEED_KMH = 380;
+
 export class HUD {
   constructor() {
     this.container = document.getElementById('hud');
@@ -168,7 +172,7 @@ export class HUD {
         text.setAttribute('text-anchor', 'middle');
         text.setAttribute('fill', '#888');
         text.setAttribute('font-size', '10');
-        text.textContent = Math.round((i / 12) * 320);
+        text.textContent = Math.round((i / 12) * MAX_SPEED_KMH);
         ticksGroup.appendChild(text);
       }
     }
@@ -191,7 +195,7 @@ export class HUD {
 
   updateSpeedometer(speedKmh, rpm, redlineRPM) {
     this.elements.speedValue.textContent = Math.round(speedKmh);
-    const maxSpeed = 320;
+    const maxSpeed = MAX_SPEED_KMH;
     const speedFraction = clamp(speedKmh / maxSpeed, 0, 1);
     const arcLength = speedFraction * 251;
     this.elements.speedArc.setAttribute('stroke-dasharray', `${arcLength} 251`);

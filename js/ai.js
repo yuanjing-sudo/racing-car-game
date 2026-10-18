@@ -40,13 +40,20 @@ const AI_SKILL_LEVELS = [
 ];
 
 export class AIDirector {
-  constructor(scene, trackData, difficulty = 2) {
+  constructor(scene, trackData, difficulty = 2, opponentCount = null) {
     this.scene = scene;
     this.trackData = trackData;
-    this.difficulty = difficulty;
+    // tolerate a string / out-of-range difficulty instead of silently
+    // spawning zero opponents and leaving skillLevel undefined
+    const diff = Number.isFinite(Number(difficulty))
+      ? Math.max(0, Math.min(AI_SKILL_LEVELS.length - 1, Math.round(Number(difficulty))))
+      : 2;
+    this.difficulty = diff;
     this.opponents = [];
-    this.numOpponents = 8 + difficulty * 2;
-    this.skillLevel = AI_SKILL_LEVELS[Math.min(difficulty, AI_SKILL_LEVELS.length - 1)];
+    this.numOpponents = Number.isFinite(Number(opponentCount)) && Number(opponentCount) > 0
+      ? Math.max(1, Math.min(20, Math.round(Number(opponentCount))))
+      : 8 + diff * 2;
+    this.skillLevel = AI_SKILL_LEVELS[diff];
     this.racePositions = [];
     this.overtakeCooldowns = new Map();
 
@@ -192,25 +199,40 @@ export class AIDirector {
     const heading = phys.heading;
 
     const targetSpeed = this.getTargetSpeed(opponent);
-    const speedFactor = clamp(targetSpeed / 50, 0.1, 1.0);
+    opponent.targetSpeed = targetSpeed;
 
-    const lookAheadDist = 8 + phys.speed * 0.5;
-    const lookAheadT = this.getClosestT(pos) + lookAheadDist / this.trackData.length;
-    const targetPt = this.getIdealPoint(opponent, lookAheadT % 1.0);
+    // --- pure-pursuit steering ------------------------------------
+    // Aim at a point on the centreline a speed-dependent distance ahead and
+    // derive the steer angle needed to reach it. The old code scaled a raw
+    // heading error by 2.5 and multiplied by targetSpeed/50, which pinned
+    // full lock the moment the AI was allowed to go faster than ~50 km/h
+    // and span the car.
+    const lookAhead = clamp(8 + phys.speed * 0.9, 10, 45);
+    const tAhead = (this.getClosestT(pos) + lookAhead / this.trackData.length) % 1;
+    const targetPt = this.trackData.curve.getPointAt(tAhead);
 
-    const toTarget = targetPt.clone().sub(pos);
-    const targetAngle = Math.atan2(toTarget.x, toTarget.z);
-    let angleDiff = targetAngle - heading;
-    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+    const dx = targetPt.x - pos.x;
+    const dz = targetPt.z - pos.z;
+    const dist = Math.max(Math.hypot(dx, dz), 1);
 
-    const steerInput = clamp(angleDiff * 2.5, -1, 1) * speedFactor;
+    let alpha = Math.atan2(dx, dz) - heading;
+    while (alpha > Math.PI) alpha -= Math.PI * 2;
+    while (alpha < -Math.PI) alpha += Math.PI * 2;
+
+    const curvature = (2 * Math.sin(alpha)) / dist;
+    const desiredSteer = Math.atan(curvature * phys.wheelBase);
+    const steerInput = clamp(desiredSteer / phys.maxSteerAngle, -1, 1);
 
     const nearestOpp = this.findNearestOpponent(opponent);
     let avoidanceSteer = 0;
     if (nearestOpp && nearestOpp.distance < 4) {
-      const avoidDir = opponent.position.clone().sub(nearestOpp.opponent.position).normalize();
+      // positions live on the physics body, not on the opponent record
+      const avoidDir = phys.position.clone()
+        .sub(nearestOpp.opponent.physics.position)
+        .normalize();
       avoidanceSteer = Math.atan2(avoidDir.x, avoidDir.z) - heading;
+      while (avoidanceSteer > Math.PI) avoidanceSteer -= Math.PI * 2;
+      while (avoidanceSteer < -Math.PI) avoidanceSteer += Math.PI * 2;
       avoidanceSteer = clamp(avoidanceSteer * 3, -0.5, 0.5);
     }
 
@@ -228,7 +250,8 @@ export class AIDirector {
       throttleInput = 0.2;
     }
 
-    if (Math.abs(angleDiff) > 0.8 && phys.speed > 10) {
+    // If the line ahead is badly off-axis, scrub speed to gather it up.
+    if (Math.abs(alpha) > 0.6 && phys.speed > 10) {
       brakeInput = Math.max(brakeInput, 0.4);
       throttleInput = 0;
     }
@@ -244,37 +267,69 @@ export class AIDirector {
   getTargetSpeed(opponent) {
     const t = this.getClosestT(opponent.physics.position);
     const curve = this.trackData.curve;
+    const len = this.trackData.length || 1;
 
-    const lookAheadPts = 5;
+    // Scan ~80 m ahead and find the tightest *true* curvature (radians per
+    // metre). The previous version treated the raw tangent-to-tangent angle
+    // over a fixed sample spacing as curvature, which scaled with the sample
+    // distance itself and reported every corner as a hairpin - pinning the
+    // whole field at 15 km/h.
+    const stepT = 6 / len;
+    const ahead = 80 / len;
     let maxCurvature = 0;
-    for (let i = 0; i < lookAheadPts; i++) {
-      const tCheck = (t + i * 0.005) % 1.0;
-      const tan = curve.getTangentAt(tCheck);
-      const nextTan = curve.getTangentAt((tCheck + 0.003) % 1.0);
-      const curvature = tan.angleTo(nextTan);
-      maxCurvature = Math.max(maxCurvature, curvature);
+
+    for (let d = 0; d < ahead; d += stepT) {
+      const a = curve.getTangentAt((t + d) % 1);
+      const b = curve.getTangentAt((t + d + stepT) % 1);
+
+      // horizontal heading delta only, so elevation never fakes a corner
+      let dTheta = Math.atan2(b.x, b.z) - Math.atan2(a.x, a.z);
+      while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+      while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+
+      const k = Math.abs(dTheta) / (stepT * len);
+      if (k > maxCurvature) maxCurvature = k;
     }
 
-    const cornerSpeed = 60 * (1 - maxCurvature * 3) * opponent.skill.corneringSkill;
-    const baseSpeed = 55 + opponent.skill.skill * 30;
+    // lateral acceleration the AI is willing to pull, then v = sqrt(a / k)
+    const corneringAccel = 5.5;
+    const cornerSpeedKmh = maxCurvature > 1e-6
+      ? Math.sqrt(corneringAccel / maxCurvature) * 3.6
+      : 1e4;
 
-    return clamp(Math.min(baseSpeed, cornerSpeed), 15, 80);
+    const baseSpeed = 130 + opponent.skill.skill * 90;
+    const caution = 0.85 + opponent.skill.corneringSkill * 0.25;
+
+    return clamp(Math.min(baseSpeed, cornerSpeedKmh * caution), 45, 240);
   }
 
   getClosestT(position) {
     const pts = this.trackData.trackPoints;
+    const n = pts.length;
     let minDist = Infinity;
-    let closestT = 0;
+    let closestIdx = 0;
 
-    for (let i = 0; i < pts.length; i += 5) {
+    // coarse pass (every 5th sample)
+    for (let i = 0; i < n; i += 5) {
       const dist = position.distanceTo(pts[i]);
       if (dist < minDist) {
         minDist = dist;
-        closestT = i / pts.length;
+        closestIdx = i;
       }
     }
 
-    return closestT;
+    // refine around the coarse hit so the returned t does not quantise to
+    // ~16 m steps (which made the look-ahead point jump around)
+    for (let o = -6; o <= 6; o++) {
+      const i = (closestIdx + o + n) % n;
+      const dist = position.distanceTo(pts[i]);
+      if (dist < minDist) {
+        minDist = dist;
+        closestIdx = i;
+      }
+    }
+
+    return closestIdx / n;
   }
 
   getIdealPoint(opponent, t) {

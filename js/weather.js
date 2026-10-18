@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { lerp, clamp, createNoise2D, fbm } from './utils.js';
+import { lerp, clamp, createNoise2D, fbm, createRadialTexture } from './utils.js';
+import { getBlossomSprite } from './materials.js';
 
 export class WeatherSystem {
   constructor(scene) {
@@ -162,11 +163,14 @@ export class WeatherSystem {
     geo.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
 
     const mat = new THREE.PointsMaterial({
+      map: createRadialTexture(64, 'rgba(255,255,255,1)', 'rgba(255,255,255,0)'),
       color: 0xffffff,
-      size: 0.2,
+      size: 0.45,
+      sizeAttenuation: true,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.85,
       depthWrite: false,
+      alphaTest: 0.02,
     });
 
     this.snowParticles = new THREE.Points(geo, mat);
@@ -207,11 +211,14 @@ export class WeatherSystem {
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
     const mat = new THREE.PointsMaterial({
-      size: 0.15,
+      map: getBlossomSprite(),
+      size: 0.6,
+      sizeAttenuation: true,
       vertexColors: true,
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.95,
       depthWrite: false,
+      alphaTest: 0.05,
     });
 
     this.petalParticles = new THREE.Points(geo, mat);
@@ -533,7 +540,8 @@ export class WeatherSystem {
         const count = positions.length / 3;
 
         for (let i = 0; i < count; i++) {
-          positions[i * 3] += (velocities[i * 3] + Math.sin(Date.now() * 0.002 + i) * 0.8) * dt;
+          const flutter = Math.sin(Date.now() * 0.002 + i) * 0.9;
+          positions[i * 3] += (velocities[i * 3] + flutter + this.windSpeed * 1.4) * dt;
           positions[i * 3 + 1] += velocities[i * 3 + 1] * dt;
           positions[i * 3 + 2] += (velocities[i * 3 + 2] + Math.cos(Date.now() * 0.002 + i) * 0.6) * dt;
 
