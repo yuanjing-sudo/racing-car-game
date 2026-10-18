@@ -8,6 +8,7 @@ import { createGraphicsPipeline, QUALITY_PRESETS } from './post/index.js';
 import { createProps } from './props.js';
 import { createDecals } from './decals.js';
 import { createWeatherFx } from './weatherfx.js';
+import { createReflections } from './reflections.js';
 import { updateMaterials } from './materials.js';
 
 /**
@@ -99,6 +100,7 @@ const DEFAULT_SETTINGS = {
   props: true,
   decals: true,
   weatherfx: true,
+  reflections: true,
   filmGrain: 0.02,
   exposureGain: 1.0,
   temperature: 0.0,
@@ -186,6 +188,12 @@ export function createGraphicsEngine(opts = {}) {
       }, 'decals', failures)
     : null;
   decals = modules.decals;
+
+  // Image-based lighting: bakes a procedural sky into scene.environment so the
+  // car paint, chrome, glass and wet asphalt have something to reflect.
+  modules.reflections = settings.reflections
+    ? safe(() => createReflections({ renderer, scene, quality: settings.quality }), 'reflections', failures)
+    : null;
 
   /**
    * (Re)build the trackside content for a theme. Called from `setTheme` when the
@@ -284,6 +292,18 @@ export function createGraphicsEngine(opts = {}) {
     // was supplied — theme colour changes alone do not need a rebuild).
     if (theme.curve) buildTrackContent(theme);
     if (modules.weatherfx) modules.weatherfx.setWeather(state.weather);
+
+    // Re-bake the environment probe for the new lighting conditions.
+    if (modules.reflections) {
+      modules.reflections.bake({
+        theme: state.theme,
+        timeOfDay: state.timeOfDay,
+        isNight: state.isNight,
+        weather: state.weather,
+        sunDirection: modules.sky ? modules.sky.sunDirection : null,
+        force: true,
+      });
+    }
   }
 
   /**
@@ -403,6 +423,13 @@ export function createGraphicsEngine(opts = {}) {
       modules.weatherfx.update(dt, full);
     }
     updateMaterials(dt, full);
+
+    // Keep the IBL probe in step with the sky (cheap: it early-outs unless the
+    // hour/weather/theme actually moved).
+    if (modules.reflections) {
+      full.theme = state.theme;
+      modules.reflections.update(dt, full);
+    }
   }
 
   /** Render one frame through the advanced post pipeline. */
@@ -447,6 +474,7 @@ export function createGraphicsEngine(opts = {}) {
     get props() { return props || modules.props; },
     get decals() { return decals; },
     get weatherfx() { return modules.weatherfx; },
+    get reflections() { return modules.reflections; },
     get ownsSky() { return !!modules.sky; },
   };
 }
