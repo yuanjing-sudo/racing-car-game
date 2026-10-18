@@ -36,9 +36,14 @@ Config/
   DefaultInput.ini                  throttle, steer, brake, handbrake
   DefaultGame.ini                   project identity
 SCENE_SETUP_CHECKLIST.txt           short scene checklist
+SETUP_PC.md                         the PC runbook: installs, storage, template walkthrough
 REALISM.md                          what makes it look real (assets + settings)
 CITY_SAMPLE.md                      verified Epic City Sample + Houdini procedure
 ```
+
+**Start with `SETUP_PC.md`** if you have not yet installed the engine — it covers
+the four things to download (two of which are not what they sound like), the real
+storage budget, and what the Chaos Vehicle template actually contains.
 
 ## Tuning
 
