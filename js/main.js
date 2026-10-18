@@ -25,7 +25,6 @@ class Game {
     this.scene = null;
     this.camera = null;
     this.renderer = null;
-    this.postFX = null;
     this.gfx = null;
     this.gfxOwnsLighting = false;
     this.envLights = [];
@@ -210,7 +209,6 @@ class Game {
   /** The per-frame context every graphics sub-system reads from. */
   graphicsContext() {
     const phys = this.playerPhysics;
-    const speed01 = phys ? clamp(phys.speed / 95, 0, 1) : 0;
     const hour = this.weather ? this.weather.timeOfDay : 12;
     const w = this.weather ? this.weather.currentWeather : 'clear';
     return {
@@ -224,7 +222,11 @@ class Game {
       damage01: this.damage01 || 0,
       focus: this.playerCar && this.playerCar.visible ? this.playerCar.position : undefined,
       groundY: 0,
-      racePhase: this.race && this.state === 'racing' ? this.race.state : undefined,
+      // The race director's phase, mapped to the vocabulary the props module
+      // understands ('countdown' fills the start lights, 'go' turns them green).
+      racePhase: this.race && this.state === 'racing'
+        ? (this.race.state === 'racing' ? 'go' : this.race.state)
+        : undefined,
     };
   }
 
