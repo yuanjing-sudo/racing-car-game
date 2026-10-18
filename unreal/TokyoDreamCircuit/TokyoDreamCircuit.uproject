@@ -1,1 +1,47 @@
-{"FileVersion":3,"EngineAssociation":"5.5","Category":"Games","Description":"Tokyo Dream Circuit UE5 starter","Modules":[{"Name":"TokyoDreamCircuit","Type":"Runtime","LoadingPhase":"Default"}],"Plugins":[{"Name":"ProceduralMeshComponent","Enabled":true}]}
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.5",
+	"Category": "Games",
+	"Description": "Tokyo Dream Circuit UE5 starter",
+	"Modules": [
+		{
+			"Name": "TokyoDreamCircuit",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine",
+				"CoreUObject"
+			]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "ProceduralMeshComponent",
+			"Enabled": true
+		},
+		{
+			"Name": "ChaosVehiclesPlugin",
+			"Enabled": true
+		},
+		{
+			"Name": "GeometryScripting",
+			"Enabled": true
+		},
+		{
+			"Name": "PCG",
+			"Enabled": true
+		},
+		{
+			"Name": "Niagara",
+			"Enabled": true
+		},
+		{
+			"Name": "MovieRenderPipeline",
+			"Enabled": true
+		}
+	],
+	"TargetPlatforms": [
+		"Windows",
+		"Linux"
+	]
+}

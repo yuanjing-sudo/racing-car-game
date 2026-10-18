@@ -1,3 +1,7 @@
 #include "TDCGameMode.h"
 #include "TDCPlayerCar.h"
-ATDCGameMode::ATDCGameMode(){DefaultPawnClass=ATDCPlayerCar::StaticClass();}
+
+ATDCGameMode::ATDCGameMode()
+{
+	DefaultPawnClass = ATDCPlayerCar::StaticClass();
+}
