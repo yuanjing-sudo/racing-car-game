@@ -4,7 +4,7 @@ import { createDefaultPhysics } from './physics.js';
 import { createTrack, TRACK_THEMES, getTerrainHeight } from './track.js';
 import { createScenery } from './scenery.js';
 import { createScene, createCamera, createRenderer } from './environment.js';
-import { createPostFX, updatePostFXSize, setBloomIntensity, setSpeedEffects } from './postfx.js';
+import { createGraphicsEngine } from './gfx/index.js';
 import { InputManager } from './controls.js';
 import { HUD } from './hud.js';
 import { AudioManager } from './audio.js';
@@ -26,6 +26,10 @@ class Game {
     this.camera = null;
     this.renderer = null;
     this.postFX = null;
+    this.gfx = null;
+    this.gfxOwnsLighting = false;
+    this.envLights = [];
+    this.speed01 = 0;
     this.playerCar = null;
     this.playerPhysics = null;
     this.trackData = null;
@@ -77,9 +81,9 @@ class Game {
     this.updateLoader(10, 'Creating scene...');
     this.scene = createScene(this.renderer);
     this.camera = createCamera();
-
-    this.updateLoader(15, 'Setting up post-processing...');
-    this.postFX = createPostFX(this.renderer, this.scene, this.camera);
+    // Snapshot the legacy global light rig so the graphics engine can mute it
+    // if it takes over lighting.
+    this.envLights = this.scene.children.filter((o) => o.isLight);
 
     this.updateLoader(20, 'Creating weather system...');
     this.weather = new WeatherSystem(this.scene);
@@ -90,6 +94,9 @@ class Game {
     this.weather.createPetalParticles();
     this.weather.createLeafParticles();
     this.weather.createCloudLayer();
+
+    this.updateLoader(23, 'Setting up post-processing...');
+    this.setupGraphics();
 
     this.updateLoader(25, 'Creating particle system...');
     this.particles = new ParticleSystem(this.scene);
@@ -152,6 +159,75 @@ class Game {
     if (statusEl && status) statusEl.textContent = status;
   }
 
+  /**
+   * Build the advanced graphics engine (atmosphere, lighting, cascaded shadows,
+   * volumetrics and the full HDR post chain). Every step is guarded so a failure
+   * in any one subsystem degrades gracefully instead of breaking the game.
+   */
+  setupGraphics() {
+    const quality = this.detectQuality();
+    try {
+      this.gfx = createGraphicsEngine({
+        renderer: this.renderer,
+        scene: this.scene,
+        camera: this.camera,
+        settings: { quality },
+      });
+
+      // Our raymarched atmosphere replaces the legacy sky dome…
+      this.gfx.attachLegacy({ sky: this.weather ? this.weather.sky : null });
+
+      // …and the cascaded shadow manager takes over the sun. If the lighting rig
+      // came up we let it drive the global rig and mute the legacy lights so the
+      // scene is not lit twice.
+      if (this.gfx.lighting && this.gfx.lighting.sun) {
+        if (this.gfx.shadows) this.gfx.shadows.register(this.gfx.lighting.sun);
+        this.gfxOwnsLighting = true;
+        for (const l of this.envLights) l.visible = false;
+      }
+
+      const size = this.renderer.getSize(new THREE.Vector2());
+      this.gfx.setSize(size.x, size.y);
+      this.gfx.setQuality(quality);
+    } catch (err) {
+      console.warn('[gfx] engine unavailable, using the legacy renderer:', err);
+      this.gfx = null;
+      this.gfxOwnsLighting = false;
+    }
+  }
+
+  /** Pick a starting quality tier from the device's resolution and memory. */
+  detectQuality() {
+    const pr = this.renderer.getPixelRatio ? this.renderer.getPixelRatio() : 1;
+    const px = window.innerWidth * window.innerHeight * pr * pr;
+    const mem = (typeof navigator !== 'undefined' && navigator.deviceMemory) || 4;
+    if (px > 4.2e6 && mem >= 8) return 'ultra';
+    if (px > 2.0e6) return 'high';
+    if (px > 9.0e5) return 'medium';
+    return 'low';
+  }
+
+  /** The per-frame context every graphics sub-system reads from. */
+  graphicsContext() {
+    const phys = this.playerPhysics;
+    const speed01 = phys ? clamp(phys.speed / 95, 0, 1) : 0;
+    const hour = this.weather ? this.weather.timeOfDay : 12;
+    const w = this.weather ? this.weather.currentWeather : 'clear';
+    return {
+      camera: this.camera,
+      timeOfDay: hour,
+      weather: w,
+      isNight: hour < 6.4 || hour > 18.6,
+      wetness: (w === 'rain' || w === 'storm') ? 1 : 0,
+      fogScale: this.weather ? this.weather.fogScale : 1,
+      speed01: this.speed01 != null ? this.speed01 : (phys ? clamp(phys.speed / 95, 0, 1) : 0),
+      damage01: this.damage01 || 0,
+      focus: this.playerCar && this.playerCar.visible ? this.playerCar.position : undefined,
+      groundY: 0,
+    };
+  }
+
+
   setupAudio() {
     const initAudio = () => {
       this.audio.init();
@@ -182,8 +258,7 @@ class Game {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
-    this.postFX.composer.setSize(w, h);
-    updatePostFXSize(this.postFX, w, h, this.renderer.getPixelRatio());
+    if (this.gfx) this.gfx.setSize(w, h);
   }
 
   onKeyDown(e) {
@@ -264,6 +339,16 @@ class Game {
       }
     }
 
+    // Tell the graphics engine how this track should look.
+    if (this.gfx) {
+      this.gfx.setTheme({
+        theme: settings.track,
+        timeOfDay: this.weather.timeOfDay,
+        weather: this.weather.currentWeather,
+        fogScale: this.weather.fogScale,
+      });
+    }
+
     this.updateLoader(85, 'Starting race...');
     this.race.start(settings);
     this.state = 'racing';
@@ -300,6 +385,15 @@ class Game {
       this.weather.fogScale = 1;
       this.weather.setWeather('clear');
       this.weather.setTimeOfDay(14);
+    }
+
+    if (this.gfx) {
+      this.gfx.setTheme({
+        theme: settings.track || 'countryside',
+        timeOfDay: this.weather.timeOfDay,
+        weather: this.weather.currentWeather,
+        fogScale: this.weather.fogScale,
+      });
     }
 
     this.race.reset();
@@ -388,9 +482,25 @@ class Game {
     }
 
     this.weather.update(dt, this.camera.position);
+
+    // When the graphics engine owns lighting, mute the legacy weather lights so
+    // the scene is not lit twice.
+    if (this.gfxOwnsLighting && this.weather) {
+      if (this.weather.sunLight) { this.weather.sunLight.intensity = 0; this.weather.sunLight.castShadow = false; }
+      if (this.weather.ambientLight) this.weather.ambientLight.intensity = 0;
+      if (this.weather.hemisphereLight) this.weather.hemisphereLight.intensity = 0;
+    }
+
     this.particles.update(dt);
     this.updateCinematic(dt, rawDt);
-    this.postFX.composer.render();
+
+    const ctx = this.graphicsContext();
+    if (this.gfx) {
+      this.gfx.update(dt, ctx);
+      this.gfx.render(dt);
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   /**
@@ -403,7 +513,15 @@ class Game {
     const driving = this.state === 'racing' || this.state === 'freeroam';
     const extra = driving && this.nitro.active ? 0.35 : 0;
 
-    setSpeedEffects(this.postFX, driving ? speed01 : 0, dt, extra);
+    this.speed01 = driving ? Math.min(speed01 + extra, 1.6) : 0;
+
+    if (this.gfx) {
+      // Hand the speed-driven grade + bloom the current intensity.
+      if (this.gfx.post) {
+        this.gfx.post.setSetting('bloomStrength', 0.72 + this.speed01 * 0.55);
+      }
+      this.gfx.settings.speed01 = this.speed01;
+    }
 
     const rolling = driving ? clamp(phys.speed / 4, 0, 1) : 0;
     this.updateCarLights(dt, phys.brake * rolling, speed01);

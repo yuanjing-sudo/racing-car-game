@@ -41,14 +41,14 @@ export const QUALITY_PRESETS = {
   low: {
     quality: 'low',
     gtao: false, ssr: false, bloom: true, lensflare: false, godrays: false,
-    dof: false, motionblur: false, colorgrade: true, smaa: true,
+    bokeh: false, motionblur: false, colorgrade: true, smaa: true,
     bloomStrength: 0.5, bloomMipCount: 4, aaStrength: 0.8,
     godraysSamples: 24, motionBlurSamples: 6, bokehRadius: 9,
   },
   medium: {
     quality: 'medium',
     gtao: true, ssr: false, bloom: true, lensflare: true, godrays: true,
-    dof: false, motionblur: true, colorgrade: true, smaa: true,
+    bokeh: false, motionblur: true, colorgrade: true, smaa: true,
     bloomStrength: 0.65, bloomMipCount: 5, aaStrength: 0.82,
     godraysSamples: 32, motionBlurSamples: 8, bokehRadius: 11,
     gtaoSamples: 8, ssrSteps: 12,
@@ -56,7 +56,7 @@ export const QUALITY_PRESETS = {
   high: {
     quality: 'high',
     gtao: true, ssr: true, bloom: true, lensflare: true, godrays: true,
-    dof: true, motionblur: true, colorgrade: true, smaa: true,
+    bokeh: true, motionblur: true, colorgrade: true, smaa: true,
     bloomStrength: 0.72, bloomMipCount: 6, aaStrength: 0.85,
     godraysSamples: 48, motionBlurSamples: 10, bokehRadius: 14,
     gtaoSamples: 12, ssrSteps: 16, ssrIntensity: 0.55,
@@ -64,7 +64,7 @@ export const QUALITY_PRESETS = {
   ultra: {
     quality: 'ultra',
     gtao: true, ssr: true, bloom: true, lensflare: true, godrays: true,
-    dof: true, motionblur: true, colorgrade: true, smaa: true,
+    bokeh: true, motionblur: true, colorgrade: true, smaa: true,
     bloomStrength: 0.8, bloomMipCount: 6, aaStrength: 0.9,
     godraysSamples: 64, motionBlurSamples: 14, bokehRadius: 18,
     gtaoSamples: 16, ssrSteps: 24, ssrIntensity: 0.7,
