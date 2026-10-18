@@ -6,6 +6,7 @@ import { createShadowManager } from './shadows.js';
 import { createVolumetrics } from './volumetrics.js';
 import { createGraphicsPipeline, QUALITY_PRESETS } from './post/index.js';
 import { createProps } from './props.js';
+import { createDynamicProps } from './dynamicprops.js';
 import { createDecals } from './decals.js';
 import { createWeatherFx } from './weatherfx.js';
 import { createReflections } from './reflections.js';
@@ -98,6 +99,8 @@ const DEFAULT_SETTINGS = {
   shadows: true,
   volumetric: true,
   props: true,
+  dynamic: true,
+  dynamicDensity: 1,
   decals: true,
   weatherfx: true,
   reflections: true,
@@ -168,6 +171,7 @@ export function createGraphicsEngine(opts = {}) {
   // Track-content modules. Props and decals are rebuilt whenever a new track is
   // loaded (see buildTrackContent); weather FX lives for the whole session.
   let props = null;
+  let dynamicProps = null;
   let decals = null;
   let weatherfx = null;
 
@@ -206,6 +210,12 @@ export function createGraphicsEngine(opts = {}) {
       props = null;
       modules.props = null;
     }
+    if (dynamicProps) {
+      if (dynamicProps.group.parent) dynamicProps.group.parent.remove(dynamicProps.group);
+      try { dynamicProps.dispose(); } catch (e) { /* ignore */ }
+      dynamicProps = null;
+      modules.dynamicprops = null;
+    }
     if (theme.decals !== false && decals) decals.clearDecals();
 
     const curve = theme.curve;
@@ -226,6 +236,27 @@ export function createGraphicsEngine(opts = {}) {
       return p;
     }, 'props', failures);
     modules.props = props;
+
+    // The animated half of the world — air traffic, turbines, fountains and
+    // searchlights. Same inputs as `props`, plus the recruiting rigs.
+    if (settings.dynamic !== false) {
+      dynamicProps = safe(() => {
+        const d = createDynamicProps({
+          theme: theme.theme,
+          seed: (theme.seed != null ? theme.seed : 42) ^ 0x1f2e3d,
+          curve,
+          width: theme.width || 12,
+          gapZones: theme.gapZones || [],
+          quality: settings.quality,
+          lighting: modules.lighting,
+          volumetrics: modules.volumetrics,
+          density: settings.dynamicDensity != null ? settings.dynamicDensity : 1,
+        });
+        if (scene) scene.add(d.group);
+        return d;
+      }, 'dynamicprops', failures);
+      modules.dynamicprops = dynamicProps;
+    }
   }
 
   // The legacy sky dome is hidden once ours is live (see attachLegacy).
@@ -417,6 +448,7 @@ export function createGraphicsEngine(opts = {}) {
 
     // World content + shared material clock.
     if (props) props.update(dt, full);
+    if (dynamicProps) dynamicProps.update(dt, full);
     if (decals) decals.update(dt, full);
     if (modules.weatherfx) {
       full.groundY = ctx.groundY != null ? ctx.groundY : 0;
@@ -441,6 +473,7 @@ export function createGraphicsEngine(opts = {}) {
   function dispose() {
     if (legacySky) legacySky.visible = true;
     if (props) { try { props.dispose(); } catch (e) { /* ignore */ } props = null; }
+    if (dynamicProps) { try { dynamicProps.dispose(); } catch (e) { /* ignore */ } dynamicProps = null; }
     for (const key of Object.keys(modules)) {
       const m = modules[key];
       if (m && m.dispose) {
@@ -472,6 +505,7 @@ export function createGraphicsEngine(opts = {}) {
     get volumetrics() { return modules.volumetrics; },
     get post() { return modules.post; },
     get props() { return props || modules.props; },
+    get dynamicprops() { return dynamicProps || modules.dynamicprops; },
     get decals() { return decals; },
     get weatherfx() { return modules.weatherfx; },
     get reflections() { return modules.reflections; },
