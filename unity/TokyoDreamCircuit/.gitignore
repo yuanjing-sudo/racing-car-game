@@ -1,0 +1,46 @@
+# Unity generated folders. Nothing in here is source and all of it is rebuilt
+# on demand - it is also very large (Library/ alone runs to several GB).
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+/[Aa]ssets/AssetStoreTools*
+
+# Unity regenerates these from the Assets folder.
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+*~
+.vscode/
+.idea/
+
+# Crash / profiler output
+sysinfo.txt
+*.stackdump
+crashlytics-build.properties
+/[Aa]ssets/[Ss]treamingAssets/aa.meta
+/[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# Local Unity version pin written by the Hub for a specific checkout
+/ProjectSettings/ProjectSettings.asset.bak
