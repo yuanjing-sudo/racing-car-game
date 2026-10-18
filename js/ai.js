@@ -77,6 +77,8 @@ export class AIDirector {
         wheelStyle: Math.floor(Math.random() * 5),
         spoilerType: Math.floor(Math.random() * 5),
         rimColor: [0xcccccc, 0x333333, 0xffcc00, 0xcc0000][Math.floor(Math.random() * 4)],
+        // the field runs trimmed cars — the player's hero car gets the full model
+        detail: 'low',
       };
 
       const carModel = createCarModel(carConfig);
