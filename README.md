@@ -75,6 +75,46 @@ level to assemble by hand.
 > two-step start, or `REALISM_UNITY.md` for the HDRP cinematic setup and an honest
 > map of what Unity does and does not have an equivalent for.
 
+## Godot 4 project
+
+A **Godot 4.6** port lives in [`godot/TokyoDreamCircuit/`](godot/TokyoDreamCircuit/) —
+the third engine, with the same road maths, the same SI car physics and the same
+numbers again, in GDScript. Unlike the other two it is a **~120 MB download with no
+installer, no account and no licence**, so it is the cheapest of the three to try.
+
+Its scene file is six lines — one node and one script — because `TDCSceneBootstrap`
+builds the road, car, camera, lighting, audio and particles from code.
+
+> Written without an editor, like the other two. Open `project.godot` in Godot 4.6 and
+> press **F5**. Godot is right-handed where Unreal and Unity are left-handed, which
+> makes the road's basis and triangle winding genuinely different code rather than a
+> copy — see that folder's `README.md`.
+
+## Sound and effects
+
+All three engine ports synthesise their own audio and build their own effects at
+runtime, from maths. **There is not a single audio file, texture or model in any of
+the three projects**, so nothing has to be licensed, downloaded or imported:
+
+| | Unreal 5.5 | Unity 6.3 | Godot 4.6 |
+| --- | --- | --- | --- |
+| Audio hook | `USynthComponent::OnGenerateAudio` | `MonoBehaviour.OnAudioFilterRead` | `AudioStreamGenerator.push_buffer` |
+| Engine note | harmonic stack at the rpm-derived firing frequency | same | same |
+| Gear shifts | 6-speed model, up at 7200 rpm | same | same |
+| Tyre scrub | driven by measured slip | same | same |
+| Wind roar | amplitude ∝ speed² | same | same |
+| Tyre smoke | Niagara needs assets, so not included — see the note below | `ParticleSystem` built in code | `CPUParticles3D` built in code |
+| Spray / brake lights | brake lights via emissive material | both | both |
+
+The engine note is the part worth having: each car runs a small gearbox model, so the
+rpm climbs to 7200, drops on the upshift and climbs again, and the audio follows it.
+That drop on the shift is most of what makes synthesised engine audio read as real.
+
+> Unreal is the one exception on particles: Niagara effects are assets, and a
+> synthesised-from-nothing particle system there would mean hand-authoring a system
+> in the editor. The Unreal port gets the audio and brake lights; `REALISM.md` says
+> what the smoke would take.
+
 ## Advanced graphics engine
 
 An optional, self-contained rendering subsystem lives in
@@ -116,4 +156,5 @@ js/
     post/             HDR post-processing chain (9 effects + orchestrator)
 unreal/TokyoDreamCircuit/   Unreal Engine 5.5 C++ starter project
 unity/TokyoDreamCircuit/    Unity 6.3 LTS C# port (same car and road maths)
+godot/TokyoDreamCircuit/    Godot 4.6 GDScript port (same car and road maths)
 ```
