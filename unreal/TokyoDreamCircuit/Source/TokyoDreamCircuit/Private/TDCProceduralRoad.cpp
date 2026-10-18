@@ -252,10 +252,13 @@ void ATDCProceduralRoad::RebuildRoad()
 		const FVector Location = Centerline->GetLocationAtDistanceAlongSpline(ClampedDist, ESplineCoordinateSpace::World);
 		const FVector Tangent = Centerline->GetTangentAtDistanceAlongSpline(ClampedDist, ESplineCoordinateSpace::World).GetSafeNormal();
 
-		FVector Right = FVector::CrossProduct(Tangent, FVector::UpVector).GetSafeNormal();
+		// Cross(Up, Tangent) is the right-hand vector in UE's left-handed basis.
+		// Cross(Tangent, Up) would be the left one, which mirrors the road and
+		// banks every corner the wrong way.
+		FVector Right = FVector::CrossProduct(FVector::UpVector, Tangent).GetSafeNormal();
 		if (Right.IsNearlyZero())
 		{
-			Right = FVector::CrossProduct(Tangent, FVector::ForwardVector).GetSafeNormal();
+			Right = FVector::CrossProduct(FVector::ForwardVector, Tangent).GetSafeNormal();
 		}
 
 		// ---- Banking from curvature -------------------------------------
@@ -270,7 +273,8 @@ void ATDCProceduralRoad::RebuildRoad()
 			const FVector TangentDerivative = (AheadTangent - BehindTangent) / (2.0f * CurvatureStep);
 			const float SignedCurvature = FVector::DotProduct(TangentDerivative, Right);
 
-			// Negative sign: turning left raises the right-hand edge.
+			// Negative sign: the road leans into the corner, which raises the
+			// outside edge.
 			BankAngle = FMath::Clamp(-SignedCurvature * BankingScale, -MaxBankRad, MaxBankRad);
 		}
 
@@ -303,15 +307,19 @@ void ATDCProceduralRoad::RebuildRoad()
 			const int32 I2 = (Row + 1) * CrossCount + Column;
 			const int32 I3 = I2 + 1;
 
+			// UE is left-handed, so cross(b - a, c - a) points out of the visible
+			// face. This order faces the mesh up for a centreline running along
+			// +X with the right-hand vector on +Y; the other order is the one
+			// that used to pair with the mirrored Right vector above.
 			if (!bFlipWinding)
 			{
-				Triangles.Add(I0); Triangles.Add(I1); Triangles.Add(I3);
-				Triangles.Add(I0); Triangles.Add(I3); Triangles.Add(I2);
+				Triangles.Add(I0); Triangles.Add(I2); Triangles.Add(I3);
+				Triangles.Add(I0); Triangles.Add(I3); Triangles.Add(I1);
 			}
 			else
 			{
-				Triangles.Add(I0); Triangles.Add(I3); Triangles.Add(I1);
-				Triangles.Add(I0); Triangles.Add(I2); Triangles.Add(I3);
+				Triangles.Add(I0); Triangles.Add(I3); Triangles.Add(I2);
+				Triangles.Add(I0); Triangles.Add(I1); Triangles.Add(I3);
 			}
 		}
 	}

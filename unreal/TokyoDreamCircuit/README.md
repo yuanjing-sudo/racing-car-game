@@ -92,6 +92,13 @@ Three behaviour changes worth knowing:
 2. **`BankDegrees` is now a maximum, not a per-sample amplitude.** Banking is measured from the road's actual curvature and clamped to `BankDegrees`, so corners bank the right way automatically.
 3. **The camera replaced the SpringArm pair**, because the speed-driven FOV ramp is most of the sense of speed at 342 km/h. If you prefer the old rig, add a `USpringArmComponent` + `UCameraComponent` back in the constructor.
 
+Also fixed while porting the same road maths to Unity: the lateral basis was
+`CrossProduct(Tangent, UpVector)`, which is the **left** vector in Unreal's
+left-handed basis, and the triangle winding compensated for it. The two errors
+cancelled for visibility, so the road rendered — but its cross-section was mirrored
+and every corner banked the wrong way. It is now `CrossProduct(UpVector, Tangent)`
+with the matching winding.
+
 The placeholder body cube is 62 cm tall, so the engine cylinders used as wheels look oversized. Adjust `Body` scale and `Wheel Radius` together when you assign a real car mesh.
 
 ## Caveats, stated plainly
