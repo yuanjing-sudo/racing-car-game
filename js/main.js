@@ -224,6 +224,7 @@ class Game {
       damage01: this.damage01 || 0,
       focus: this.playerCar && this.playerCar.visible ? this.playerCar.position : undefined,
       groundY: 0,
+      racePhase: this.race && this.state === 'racing' ? this.race.state : undefined,
     };
   }
 
@@ -346,6 +347,10 @@ class Game {
         timeOfDay: this.weather.timeOfDay,
         weather: this.weather.currentWeather,
         fogScale: this.weather.fogScale,
+        curve: this.trackData.curve,
+        width: this.trackData.width,
+        gapZones: this.trackData.gapZones,
+        seed,
       });
     }
 
@@ -393,6 +398,10 @@ class Game {
         timeOfDay: this.weather.timeOfDay,
         weather: this.weather.currentWeather,
         fogScale: this.weather.fogScale,
+        curve: this.trackData.curve,
+        width: this.trackData.width,
+        gapZones: this.trackData.gapZones,
+        seed,
       });
     }
 
@@ -424,6 +433,10 @@ class Game {
     }
     this.trackData = null;
     this.particles.emitters = [];
+    if (this.gfx && this.gfx.decals) {
+      this.gfx.decals.clearSkid();
+      this.gfx.decals.clearDecals();
+    }
   }
 
   getGridPosition(index) {
@@ -714,6 +727,9 @@ class Game {
     const wheels = this.playerCar.userData.wheels;
     const underglow = this.playerCar.userData.parts.underglow;
 
+    // Lay rubber on the tarmac whenever the tyres are slipping.
+    this.updateSkidMarks(isDrifting, speed, wheels);
+
     if (this.nitro.active) {
       const pulse = 1 + Math.sin(this.elapsedTime * 20) * 0.4;
       if (underglow) {
@@ -764,6 +780,37 @@ class Game {
           this.particles.emitTireSmoke(wheelPos, this.playerPhysics.velocity, 0.5);
         }
       }
+    }
+  }
+
+  /**
+   * Lay rubber on the tarmac whenever the tyres are slipping: drifting lays the
+   * darkest marks, locked brakes a little lighter, wheelspin on launch lighter
+   * still. Skid lanes are keyed per wheel so a slide paints four continuous
+   * ribbons rather than a scatter of dashes.
+   */
+  updateSkidMarks(isDrifting, speed, wheels) {
+    const decals = this.gfx && this.gfx.decals;
+    if (!decals || !wheels) return;
+    const keys = ['fl', 'fr', 'rl', 'rr'];
+    const braking = this.playerPhysics.brake > 0.7 && speed > 8;
+    const spinning = this.playerPhysics.throttle > 0.85 && speed < 16;
+    const sliding = isDrifting && speed > 4;
+
+    if (!sliding && !braking && !spinning) {
+      for (const k of keys) decals.breakSkid(k);
+      return;
+    }
+
+    const baseY = this.playerPhysics.position.y + 0.02;
+    const strength = sliding ? 1.0 : braking ? 0.85 : 0.62;
+    const wheelPos = new THREE.Vector3();
+    for (let i = 0; i < 4; i++) {
+      const w = wheels[i];
+      if (!w) continue;
+      w.getWorldPosition(wheelPos);
+      wheelPos.y = baseY;
+      decals.emitSkid(keys[i], wheelPos, 0.17, strength);
     }
   }
 

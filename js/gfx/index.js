@@ -5,6 +5,10 @@ import { createLightingRig } from './lighting.js';
 import { createShadowManager } from './shadows.js';
 import { createVolumetrics } from './volumetrics.js';
 import { createGraphicsPipeline, QUALITY_PRESETS } from './post/index.js';
+import { createProps } from './props.js';
+import { createDecals } from './decals.js';
+import { createWeatherFx } from './weatherfx.js';
+import { updateMaterials } from './materials.js';
 
 /**
  * gfx/index.js — the graphics engine.
@@ -92,6 +96,9 @@ const DEFAULT_SETTINGS = {
   lighting: true,
   shadows: true,
   volumetric: true,
+  props: true,
+  decals: true,
+  weatherfx: true,
   filmGrain: 0.02,
   exposureGain: 1.0,
   temperature: 0.0,
@@ -156,6 +163,63 @@ export function createGraphicsEngine(opts = {}) {
     ? safe(() => createVolumetrics({ renderer, scene, camera }), 'volumetrics', failures)
     : null;
 
+  // Track-content modules. Props and decals are rebuilt whenever a new track is
+  // loaded (see buildTrackContent); weather FX lives for the whole session.
+  let props = null;
+  let decals = null;
+  let weatherfx = null;
+
+  modules.weatherfx = settings.weatherfx
+    ? safe(() => {
+        const fx = createWeatherFx({ renderer, scene, camera, quality: settings.quality });
+        if (scene) scene.add(fx.group);
+        return fx;
+      }, 'weatherfx', failures)
+    : null;
+  weatherfx = modules.weatherfx;
+
+  modules.decals = settings.decals
+    ? safe(() => {
+        const d = createDecals({ quality: settings.quality });
+        if (scene) scene.add(d.group);
+        return d;
+      }, 'decals', failures)
+    : null;
+  decals = modules.decals;
+
+  /**
+   * (Re)build the trackside content for a theme. Called from `setTheme` when the
+   * caller supplies a track curve; safe to call with no curve to tear down.
+   */
+  function buildTrackContent(theme = {}) {
+    if (props) {
+      if (props.group.parent) props.group.parent.remove(props.group);
+      try { props.dispose(); } catch (e) { /* ignore */ }
+      props = null;
+      modules.props = null;
+    }
+    if (theme.decals !== false && decals) decals.clearDecals();
+
+    const curve = theme.curve;
+    if (!curve || settings.props === false) return;
+
+    props = safe(() => {
+      const p = createProps({
+        theme: theme.theme,
+        seed: theme.seed != null ? theme.seed : 42,
+        curve,
+        width: theme.width || 12,
+        gapZones: theme.gapZones || [],
+        quality: settings.quality,
+        lighting: modules.lighting,
+        density: settings.propDensity != null ? settings.propDensity : 1,
+      });
+      if (scene) scene.add(p.group);
+      return p;
+    }, 'props', failures);
+    modules.props = props;
+  }
+
   // The legacy sky dome is hidden once ours is live (see attachLegacy).
   let legacySky = null;
   let attachedSun = null;
@@ -215,6 +279,11 @@ export function createGraphicsEngine(opts = {}) {
 
     // Night sky leans cold; the grade handles the rest.
     settings.temperature = night ? -0.12 : 0.0;
+
+    // Rebuild the trackside content for the new theme (only when a track curve
+    // was supplied — theme colour changes alone do not need a rebuild).
+    if (theme.curve) buildTrackContent(theme);
+    if (modules.weatherfx) modules.weatherfx.setWeather(state.weather);
   }
 
   /**
@@ -304,6 +373,8 @@ export function createGraphicsEngine(opts = {}) {
       letterbox: ctx.letterbox,
       damage01: ctx.damage01,
       focusDistance: ctx.focusDistance,
+      racePhase: ctx.racePhase,
+      groundY: ctx.groundY,
     };
 
     modules.sky && modules.sky.update(dt, full);
@@ -323,6 +394,15 @@ export function createGraphicsEngine(opts = {}) {
       full.exposure = settings.exposureGain;
       modules.post.update(dt, full);
     }
+
+    // World content + shared material clock.
+    if (props) props.update(dt, full);
+    if (decals) decals.update(dt, full);
+    if (modules.weatherfx) {
+      full.groundY = ctx.groundY != null ? ctx.groundY : 0;
+      modules.weatherfx.update(dt, full);
+    }
+    updateMaterials(dt, full);
   }
 
   /** Render one frame through the advanced post pipeline. */
@@ -333,6 +413,7 @@ export function createGraphicsEngine(opts = {}) {
 
   function dispose() {
     if (legacySky) legacySky.visible = true;
+    if (props) { try { props.dispose(); } catch (e) { /* ignore */ } props = null; }
     for (const key of Object.keys(modules)) {
       const m = modules[key];
       if (m && m.dispose) {
@@ -349,6 +430,7 @@ export function createGraphicsEngine(opts = {}) {
     state,
     setQuality,
     setTheme,
+    buildTrackContent,
     attachLegacy,
     addStreetlight,
     addNeonGlow,
@@ -362,6 +444,9 @@ export function createGraphicsEngine(opts = {}) {
     get shadows() { return modules.shadows; },
     get volumetrics() { return modules.volumetrics; },
     get post() { return modules.post; },
+    get props() { return props || modules.props; },
+    get decals() { return decals; },
+    get weatherfx() { return modules.weatherfx; },
     get ownsSky() { return !!modules.sky; },
   };
 }
