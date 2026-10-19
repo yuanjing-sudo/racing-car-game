@@ -140,8 +140,10 @@ function grateTexture() {
 /**
  * Dust blown onto the tarmac from the verge. Alpha falls off to the left
  * (the inside of the strip) so the band dissolves into the road.
+ *
+ * @param {function(): number} [random] seeded source for the grit speckles
  */
-function fringeTexture() {
+function fringeTexture(random = Math.random) {
   const c = makeCanvas(64, 32);
   if (!c) return null;
   const ctx = c.getContext('2d');
@@ -157,10 +159,10 @@ function fringeTexture() {
 
   // grit speckles, denser toward the outer edge
   for (let i = 0; i < 220; i++) {
-    const x = Math.random() * 64;
-    const a = (x / 64) * 0.5 * Math.random();
+    const x = random() * 64;
+    const a = (x / 64) * 0.5 * random();
     ctx.fillStyle = `rgba(40,34,26,${a.toFixed(3)})`;
-    ctx.fillRect(x, Math.random() * 32, 1 + Math.random() * 1.6, 1);
+    ctx.fillRect(x, random() * 32, 1 + random() * 1.6, 1);
   }
 
   const tex = textureFrom(c, true);
@@ -474,7 +476,7 @@ export function createRoadDetail(opts = {}) {
   /* -------------------------------------------------------------- fringe -- */
 
   if (plan.fringe) {
-    const fringeTex = fringeTexture();
+    const fringeTex = fringeTexture(random);
     if (fringeTex) {
       const positions = [];
       const normals = [];
@@ -616,7 +618,13 @@ export function createRoadDetail(opts = {}) {
 
     for (let i = 0; i < manholeCount; i++) {
       const u = (i + 0.2 + random() * 0.6) / manholeCount;
-      const lateral = (random() * 2 - 1) * (halfW - 0.9);
+      // Covers live in the gutter or over the crown, not scattered across the
+      // lane: a manhole in the middle of the racing line reads as a mistake,
+      // and the tarmac pattern makes it obvious.
+      const side = random() < 0.5 ? -1 : 1;
+      const lateral = random() < 0.78
+        ? side * halfW * (0.66 + random() * 0.26)
+        : side * halfW * (0.04 + random() * 0.14);
       const s = 0.92 + random() * 0.14;
       placeFlat(mesh, i, u, lateral, 0.009, s, s, 1, random() * Math.PI * 2);
       mesh.setColorAt(i, new THREE.Color().setHSL(0.09, 0.05 + random() * 0.06, 0.52 + random() * 0.1));

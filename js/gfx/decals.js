@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { seededRandom } from './geometry.js';
 
 /**
  * decals.js — rubber, skid marks and surface markings.
@@ -31,6 +32,9 @@ function makeCanvas(w, h) {
 
 /** Soft, streaked brush used for a single skid band. */
 function skidTexture() {
+  // A brush is look, not simulation: seed it so every session paints the same
+  // streaks instead of the frame-to-frame noise a bare Math.random gives.
+  const random = seededRandom(0x5c1d);
   const c = makeCanvas(64, 64);
   if (!c) return null;
   const ctx = c.getContext('2d');
@@ -47,9 +51,9 @@ function skidTexture() {
   // streaks
   ctx.globalCompositeOperation = 'destination-out';
   for (let i = 0; i < 26; i++) {
-    const y = Math.random() * 64;
-    ctx.fillStyle = `rgba(0,0,0,${0.05 + Math.random() * 0.18})`;
-    ctx.fillRect(0, y, 64, 1 + Math.random() * 1.6);
+    const y = random() * 64;
+    ctx.fillStyle = `rgba(0,0,0,${0.05 + random() * 0.18})`;
+    ctx.fillRect(0, y, 64, 1 + random() * 1.6);
   }
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;

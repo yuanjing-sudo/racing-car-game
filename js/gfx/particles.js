@@ -544,7 +544,7 @@ export class ParticleSystem {
     const nrm = normal || this._tmp.set(0, 1, 0);
     for (let k = 0; k < count; k++) {
       const i = this.spark.alloc();
-      if (i < 0) return;
+      if (i < 0) break;
       const spread = 3.5;
       const vx = nrm.x * (1.5 + rnd() * 3) + (rnd() - 0.5) * spread;
       const vy = 1.2 + rnd() * 4.5 + nrm.y * 1.5;
@@ -601,7 +601,7 @@ export class ParticleSystem {
     // Shell: uniform directions on a sphere so the burst reads as round.
     for (let k = 0; k < count; k++) {
       const i = this.spark.alloc();
-      if (i < 0) return;
+      if (i < 0) break;
 
       const theta = rnd() * Math.PI * 2;
       const y = rnd() * 2 - 1;
