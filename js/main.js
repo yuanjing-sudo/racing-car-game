@@ -38,6 +38,7 @@ class Game {
     this.audio = null;
     this.weather = null;
     this.particles = null;
+    this.celebration = null;
     this.configurator = null;
     this.cameraController = null;
     this.menu = null;
@@ -515,6 +516,7 @@ class Game {
       if (this.weather.hemisphereLight) this.weather.hemisphereLight.intensity = 0;
     }
 
+    this.updateCelebration(dt);
     this.particles.update(dt, {
       groundY: this.playerPhysics ? this.playerPhysics.position.y : 0,
       wetness: this.weather ? ((this.weather.currentWeather === 'rain' || this.weather.currentWeather === 'storm') ? 1 : 0) : 0,
@@ -751,7 +753,51 @@ class Game {
       // cut to the director for the finish: bars in, slow motion, a crane and
       // an orbit, then hand the camera back
       if (this.gfx && this.gfx.cinematic) this.gfx.cinematic.playSequence('finish');
+      // Fireworks over the circuit for a few seconds, plus confetti over the car.
+      this.celebration = { time: 5.0, next: 0.15, vec: new THREE.Vector3() };
+      if (this.particles && this.playerPhysics) {
+        this.particles.emitConfetti(this.playerPhysics.position, 90, 0xff2e88);
+      }
     }
+  }
+
+  /**
+   * Finish-line fireworks. Shells are launched on a short cadence around the
+   * player rather than all at once, so the sky keeps popping for a few seconds
+   * while the cinematic plays.
+   */
+  updateCelebration(dt) {
+    const c = this.celebration;
+    if (!c) return;
+    c.time -= dt;
+    if (c.time <= 0) {
+      this.celebration = null;
+      return;
+    }
+    c.next -= dt;
+    if (c.next > 0) return;
+    c.next = 0.26 + Math.random() * 0.22;
+
+    const base = this.playerPhysics ? this.playerPhysics.position : this.camera.position;
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 14 + Math.random() * 26;
+    c.vec.set(
+      base.x + Math.cos(angle) * radius,
+      base.y + 20 + Math.random() * 18,
+      base.z + Math.sin(angle) * radius,
+    );
+
+    const palettes = [
+      [1.7, 0.95, 0.35], // amber
+      [1.5, 0.35, 0.55], // magenta
+      [0.45, 1.15, 1.55], // cyan
+      [1.55, 1.5, 0.55], // gold
+      [1.2, 0.55, 1.6], // violet
+    ];
+    this.particles.emitFirework(c.vec, {
+      color: palettes[Math.floor(Math.random() * palettes.length)],
+      count: 58,
+    });
   }
 
   updateEffects(dt, physData) {

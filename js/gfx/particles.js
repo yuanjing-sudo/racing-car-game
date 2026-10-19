@@ -565,6 +565,94 @@ export class ParticleSystem {
   }
 
   /**
+   * A single firework shell: a bright core flash inside a spherical shell of
+   * HDR sparks that arc out and fall under gravity. Colours are deliberately
+   * above 1.0 so the bloom pass picks the burst out of a night sky.
+   *
+   * @param {THREE.Vector3} position burst centre (world space)
+   * @param {{ color?: number[], count?: number, speed?: number }} [opts]
+   */
+  emitFirework(position, opts = {}) {
+    if (!position) return;
+    const rnd = this._rnd;
+    const color = opts.color || [1.6, 1.0, 0.45];
+    const count = opts.count || 64;
+    const speed = opts.speed || 11;
+
+    // Core: one oversized additive billboard that blooms out and fades fast.
+    const core = this.flame.alloc();
+    if (core >= 0) {
+      this.flame.spawn(core, position.x, position.y, position.z, 0, 0.5, 0, {
+        life: 0.55,
+        size0: 3.2,
+        size1: 8.5,
+        rot: rnd() * 6.28,
+        rotVel: (rnd() - 0.5) * 2,
+        drag: 0.8,
+        gravity: -0.6,
+        buoyancy: 0.5,
+        alpha0: 0.95,
+        alpha1: 0,
+        col0: [color[0] * 2.0, color[1] * 1.9, color[2] * 1.7],
+        col1: [color[0] * 0.25, color[1] * 0.12, color[2] * 0.05],
+      });
+    }
+
+    // Shell: uniform directions on a sphere so the burst reads as round.
+    for (let k = 0; k < count; k++) {
+      const i = this.spark.alloc();
+      if (i < 0) return;
+
+      const theta = rnd() * Math.PI * 2;
+      const y = rnd() * 2 - 1;
+      const radial = Math.sqrt(Math.max(0, 1 - y * y));
+      const v = speed * (0.55 + rnd() * 0.7);
+
+      this.spark.spawn(
+        i,
+        position.x, position.y, position.z,
+        Math.cos(theta) * radial * v,
+        y * v + 2.2,
+        Math.sin(theta) * radial * v,
+        {
+          life: 0.9 + rnd() * 0.9,
+          size0: 0.34 + rnd() * 0.26,
+          size1: 0.04,
+          rot: rnd() * 6.28,
+          rotVel: (rnd() - 0.5) * 6,
+          drag: 0.55,
+          gravity: 6.2,
+          bounce: 0,
+          flags: 0,
+          alpha0: 1,
+          alpha1: 0,
+          col0: [color[0] * 1.5, color[1] * 1.5, color[2] * 1.5],
+          col1: [color[0] * 0.18, color[1] * 0.08, color[2] * 0.04],
+        }
+      );
+    }
+
+    // A little smoke left hanging where the shell went off.
+    for (let k = 0; k < 4; k++) {
+      const i = this.smoke.alloc();
+      if (i < 0) break;
+      this.smoke.spawn(
+        i,
+        position.x + (rnd() - 0.5) * 1.5,
+        position.y + (rnd() - 0.5) * 1.5,
+        position.z + (rnd() - 0.5) * 1.5,
+        (rnd() - 0.5) * 0.6, 0.2 + rnd() * 0.4, (rnd() - 0.5) * 0.6,
+        {
+          life: 2.4 + rnd() * 1.6,
+          size0: 1.2, size1: 5.5, drag: 0.4, gravity: 0.1,
+          buoyancy: 0.25, flags: 1, alpha0: 0.18, alpha1: 0,
+          col0: [0.32, 0.30, 0.30], col1: [0.12, 0.12, 0.13],
+        }
+      );
+    }
+  }
+
+  /**
    * Exhaust: a fast blue-white core that decays into a warm puff, scaled by
    * throttle. Under full throttle it also spits the odd flame.
    */
