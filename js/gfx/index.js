@@ -9,6 +9,7 @@ import { createProps } from './props.js';
 import { createDynamicProps } from './dynamicprops.js';
 import { createScreens } from './screens.js';
 import { createRoadDetail } from './roaddetail.js';
+import { createCrew } from './crew.js';
 import { createDecals } from './decals.js';
 import { createWeatherFx } from './weatherfx.js';
 import { createReflections } from './reflections.js';
@@ -106,6 +107,7 @@ const DEFAULT_SETTINGS = {
   dynamicDensity: 1,
   screens: true,
   roaddetail: true,
+  crew: true,
   decals: true,
   weatherfx: true,
   reflections: true,
@@ -180,6 +182,7 @@ export function createGraphicsEngine(opts = {}) {
   let dynamicProps = null;
   let screens = null;
   let roadDetail = null;
+  let crew = null;
   let decals = null;
   let weatherfx = null;
 
@@ -241,6 +244,12 @@ export function createGraphicsEngine(opts = {}) {
       try { roadDetail.dispose(); } catch (e) { /* ignore */ }
       roadDetail = null;
       modules.roaddetail = null;
+    }
+    if (crew) {
+      if (crew.group.parent) crew.group.parent.remove(crew.group);
+      try { crew.dispose(); } catch (e) { /* ignore */ }
+      crew = null;
+      modules.crew = null;
     }
     if (theme.decals !== false && decals) decals.clearDecals();
 
@@ -318,6 +327,25 @@ export function createGraphicsEngine(opts = {}) {
         return r;
       }, 'roaddetail', failures);
       modules.roaddetail = roadDetail;
+    }
+
+    // Marshals, camera operators and photographers along the bank.
+    if (settings.crew !== false) {
+      crew = safe(() => {
+        const c = createCrew({
+          theme: theme.theme,
+          seed: (theme.seed != null ? theme.seed : 42) ^ 0x4c1e,
+          curve,
+          width: theme.width || 12,
+          gapZones: theme.gapZones || [],
+          quality: settings.quality,
+          lighting: modules.lighting,
+          density: settings.crewDensity != null ? settings.crewDensity : 1,
+        });
+        if (scene) scene.add(c.group);
+        return c;
+      }, 'crew', failures);
+      modules.crew = crew;
     }
   }
 
@@ -531,6 +559,7 @@ export function createGraphicsEngine(opts = {}) {
     if (dynamicProps) dynamicProps.update(dt, full);
     if (screens) screens.update(dt, full);
     if (roadDetail) roadDetail.update(dt, full);
+    if (crew) crew.update(dt, full);
     if (decals) decals.update(dt, full);
     if (modules.weatherfx) {
       full.groundY = ctx.groundY != null ? ctx.groundY : 0;
@@ -558,6 +587,7 @@ export function createGraphicsEngine(opts = {}) {
     if (dynamicProps) { try { dynamicProps.dispose(); } catch (e) { /* ignore */ } dynamicProps = null; }
     if (screens) { try { screens.dispose(); } catch (e) { /* ignore */ } screens = null; }
     if (roadDetail) { try { roadDetail.dispose(); } catch (e) { /* ignore */ } roadDetail = null; }
+    if (crew) { try { crew.dispose(); } catch (e) { /* ignore */ } crew = null; }
     for (const key of Object.keys(modules)) {
       const m = modules[key];
       if (m && m.dispose) {
@@ -592,6 +622,7 @@ export function createGraphicsEngine(opts = {}) {
     get dynamicprops() { return dynamicProps || modules.dynamicprops; },
     get screens() { return screens || modules.screens; },
     get roaddetail() { return roadDetail || modules.roaddetail; },
+    get crew() { return crew || modules.crew; },
     get decals() { return decals; },
     get weatherfx() { return modules.weatherfx; },
     get reflections() { return modules.reflections; },
