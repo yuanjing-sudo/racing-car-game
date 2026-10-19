@@ -15,6 +15,8 @@ import { createDecals } from './decals.js';
 import { createWeatherFx } from './weatherfx.js';
 import { createReflections } from './reflections.js';
 import { createCinematic } from './cinematic.js';
+import { createSkyline } from './skyline.js';
+import { createRural } from './rural.js';
 import { updateMaterials } from './materials.js';
 
 /**
@@ -110,6 +112,8 @@ const DEFAULT_SETTINGS = {
   roaddetail: true,
   crew: true,
   kerbs: true,
+  skyline: true,
+  rural: true,
   decals: true,
   weatherfx: true,
   reflections: true,
@@ -186,6 +190,8 @@ export function createGraphicsEngine(opts = {}) {
   let roadDetail = null;
   let crew = null;
   let kerbs = null;
+  let skyline = null;
+  let rural = null;
   let decals = null;
   let weatherfx = null;
 
@@ -259,6 +265,18 @@ export function createGraphicsEngine(opts = {}) {
       try { kerbs.dispose(); } catch (e) { /* ignore */ }
       kerbs = null;
       modules.kerbs = null;
+    }
+    if (skyline) {
+      if (skyline.group.parent) skyline.group.parent.remove(skyline.group);
+      try { skyline.dispose(); } catch (e) { /* ignore */ }
+      skyline = null;
+      modules.skyline = null;
+    }
+    if (rural) {
+      if (rural.group.parent) rural.group.parent.remove(rural.group);
+      try { rural.dispose(); } catch (e) { /* ignore */ }
+      rural = null;
+      modules.rural = null;
     }
     if (theme.decals !== false && decals) decals.clearDecals();
 
@@ -373,6 +391,47 @@ export function createGraphicsEngine(opts = {}) {
         return k;
       }, 'kerbs', failures);
       modules.kerbs = kerbs;
+    }
+
+    // The detailed city beyond the barriers. `skyline.js` is a no-op outside the
+    // urban themes, so this runs for every track and only city/tokyo grow towers.
+    if (settings.skyline !== false) {
+      skyline = safe(() => {
+        const s = createSkyline({
+          theme: theme.theme,
+          seed: (theme.seed != null ? theme.seed : 42) ^ 0x5cd107,
+          curve,
+          width: theme.width || 12,
+          gapZones: theme.gapZones || [],
+          quality: settings.quality,
+          lighting: modules.lighting,
+          density: settings.skylineDensity != null ? settings.skylineDensity : (settings.dynamicDensity || 1),
+        });
+        if (scene) scene.add(s.group);
+        return s;
+      }, 'skyline', failures);
+      modules.skyline = skyline;
+    }
+
+    // Farmland, hedgerows, farmsteads and leaves. Note the seed is passed
+    // **unmangled**: `rural.js` rebuilds the track's own terrain noise from it, so
+    // its fields and buildings sit on the exact hills the rest of the game draws
+    // rather than floating over them.
+    if (settings.rural !== false) {
+      rural = safe(() => {
+        const r = createRural({
+          theme: theme.theme,
+          seed: theme.seed != null ? theme.seed : 42,
+          curve,
+          width: theme.width || 12,
+          gapZones: theme.gapZones || [],
+          quality: settings.quality,
+          density: settings.ruralDensity != null ? settings.ruralDensity : 1,
+        });
+        if (scene) scene.add(r.group);
+        return r;
+      }, 'rural', failures);
+      modules.rural = rural;
     }
   }
 
@@ -588,6 +647,8 @@ export function createGraphicsEngine(opts = {}) {
     if (roadDetail) roadDetail.update(dt, full);
     if (crew) crew.update(dt, full);
     if (kerbs) kerbs.update(dt, full);
+    if (skyline) skyline.update(dt, full);
+    if (rural) rural.update(dt, full);
     if (decals) decals.update(dt, full);
     if (modules.weatherfx) {
       full.groundY = ctx.groundY != null ? ctx.groundY : 0;
@@ -611,12 +672,20 @@ export function createGraphicsEngine(opts = {}) {
 
   function dispose() {
     if (legacySky) legacySky.visible = true;
+    // Track content lives in the caller's scene, not this engine's: take it back
+    // out before releasing its buffers, or a disposed engine leaves a ghost
+    // circuit (and a skyline) parented behind it.
+    for (const m of [props, dynamicProps, screens, roadDetail, crew, kerbs, skyline, rural]) {
+      if (m && m.group && m.group.parent) m.group.parent.remove(m.group);
+    }
     if (props) { try { props.dispose(); } catch (e) { /* ignore */ } props = null; }
     if (dynamicProps) { try { dynamicProps.dispose(); } catch (e) { /* ignore */ } dynamicProps = null; }
     if (screens) { try { screens.dispose(); } catch (e) { /* ignore */ } screens = null; }
     if (roadDetail) { try { roadDetail.dispose(); } catch (e) { /* ignore */ } roadDetail = null; }
     if (crew) { try { crew.dispose(); } catch (e) { /* ignore */ } crew = null; }
     if (kerbs) { try { kerbs.dispose(); } catch (e) { /* ignore */ } kerbs = null; }
+    if (skyline) { try { skyline.dispose(); } catch (e) { /* ignore */ } skyline = null; }
+    if (rural) { try { rural.dispose(); } catch (e) { /* ignore */ } rural = null; }
     for (const key of Object.keys(modules)) {
       const m = modules[key];
       if (m && m.dispose) {
@@ -653,6 +722,8 @@ export function createGraphicsEngine(opts = {}) {
     get roaddetail() { return roadDetail || modules.roaddetail; },
     get crew() { return crew || modules.crew; },
     get kerbs() { return kerbs || modules.kerbs; },
+    get skyline() { return skyline || modules.skyline; },
+    get rural() { return rural || modules.rural; },
     get decals() { return decals; },
     get weatherfx() { return modules.weatherfx; },
     get reflections() { return modules.reflections; },

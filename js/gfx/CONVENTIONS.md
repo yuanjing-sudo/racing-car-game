@@ -49,6 +49,8 @@ js/gfx/
   roaddetail.js       asphalt wear: patches, tar snakes, seams, drains, marbles
   crew.js             marshals, camera operators, photographers
   kerbs.js            raised bevelled apex kerbs
+  skyline.js          city skyline: towers, podiums, signs, beacons (city, tokyo)
+  rural.js            farmland, hedgerows, farmsteads, leaves (countryside, forest)
   geometry.js         geometry helper library
   car.js              detailed procedural hypercar
   materials.js        advanced PBR material library
