@@ -736,6 +736,11 @@ class Game {
       this.hud.showCountdown(0);
     }
 
+    // Keep the trackside LED boards showing the live classification.
+    if (this.gfx && this.gfx.screens) {
+      this.gfx.screens.setRaceInfo(this.race.currentLap, this.race.totalLaps, this.race.racePosition);
+    }
+
     if (event === 'lap') {
       this.hud.showMessage(`Lap ${this.race.currentLap}/${this.race.totalLaps}`, 2000);
       this.audio.playEffect('lap_complete');

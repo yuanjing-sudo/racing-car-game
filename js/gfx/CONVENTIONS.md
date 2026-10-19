@@ -45,6 +45,7 @@ js/gfx/
   props.js            road furniture & architecture
   decals.js          road markings & dynamic decals
   dynamicprops.js     animated world: air traffic, turbines, fountains, searchlights
+  screens.js          trackside LED media: jumbotrons, ribbons, timing tower
   geometry.js         geometry helper library
   car.js              detailed procedural hypercar
   materials.js        advanced PBR material library

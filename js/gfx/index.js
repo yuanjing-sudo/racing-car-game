@@ -7,6 +7,7 @@ import { createVolumetrics } from './volumetrics.js';
 import { createGraphicsPipeline, QUALITY_PRESETS } from './post/index.js';
 import { createProps } from './props.js';
 import { createDynamicProps } from './dynamicprops.js';
+import { createScreens } from './screens.js';
 import { createDecals } from './decals.js';
 import { createWeatherFx } from './weatherfx.js';
 import { createReflections } from './reflections.js';
@@ -102,6 +103,7 @@ const DEFAULT_SETTINGS = {
   props: true,
   dynamic: true,
   dynamicDensity: 1,
+  screens: true,
   decals: true,
   weatherfx: true,
   reflections: true,
@@ -174,6 +176,7 @@ export function createGraphicsEngine(opts = {}) {
   // loaded (see buildTrackContent); weather FX lives for the whole session.
   let props = null;
   let dynamicProps = null;
+  let screens = null;
   let decals = null;
   let weatherfx = null;
 
@@ -224,6 +227,12 @@ export function createGraphicsEngine(opts = {}) {
       dynamicProps = null;
       modules.dynamicprops = null;
     }
+    if (screens) {
+      if (screens.group.parent) screens.group.parent.remove(screens.group);
+      try { screens.dispose(); } catch (e) { /* ignore */ }
+      screens = null;
+      modules.screens = null;
+    }
     if (theme.decals !== false && decals) decals.clearDecals();
 
     const curve = theme.curve;
@@ -264,6 +273,25 @@ export function createGraphicsEngine(opts = {}) {
         return d;
       }, 'dynamicprops', failures);
       modules.dynamicprops = dynamicProps;
+    }
+
+    // Animated trackside media: jumbotrons, ribbon boards and a timing tower.
+    if (settings.screens !== false) {
+      screens = safe(() => {
+        const s = createScreens({
+          theme: theme.theme,
+          seed: (theme.seed != null ? theme.seed : 42) ^ 0x77aa11,
+          curve,
+          width: theme.width || 12,
+          gapZones: theme.gapZones || [],
+          quality: settings.quality,
+          lighting: modules.lighting,
+          density: settings.screenDensity != null ? settings.screenDensity : settings.dynamicDensity || 1,
+        });
+        if (scene) scene.add(s.group);
+        return s;
+      }, 'screens', failures);
+      modules.screens = screens;
     }
   }
 
@@ -475,6 +503,7 @@ export function createGraphicsEngine(opts = {}) {
     // World content + shared material clock.
     if (props) props.update(dt, full);
     if (dynamicProps) dynamicProps.update(dt, full);
+    if (screens) screens.update(dt, full);
     if (decals) decals.update(dt, full);
     if (modules.weatherfx) {
       full.groundY = ctx.groundY != null ? ctx.groundY : 0;
@@ -500,6 +529,7 @@ export function createGraphicsEngine(opts = {}) {
     if (legacySky) legacySky.visible = true;
     if (props) { try { props.dispose(); } catch (e) { /* ignore */ } props = null; }
     if (dynamicProps) { try { dynamicProps.dispose(); } catch (e) { /* ignore */ } dynamicProps = null; }
+    if (screens) { try { screens.dispose(); } catch (e) { /* ignore */ } screens = null; }
     for (const key of Object.keys(modules)) {
       const m = modules[key];
       if (m && m.dispose) {
@@ -532,6 +562,7 @@ export function createGraphicsEngine(opts = {}) {
     get post() { return modules.post; },
     get props() { return props || modules.props; },
     get dynamicprops() { return dynamicProps || modules.dynamicprops; },
+    get screens() { return screens || modules.screens; },
     get decals() { return decals; },
     get weatherfx() { return modules.weatherfx; },
     get reflections() { return modules.reflections; },
