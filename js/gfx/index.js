@@ -17,6 +17,7 @@ import { createReflections } from './reflections.js';
 import { createCinematic } from './cinematic.js';
 import { createSkyline } from './skyline.js';
 import { createRural } from './rural.js';
+import { createWilds } from './wilds.js';
 import { updateMaterials } from './materials.js';
 
 /**
@@ -114,6 +115,7 @@ const DEFAULT_SETTINGS = {
   kerbs: true,
   skyline: true,
   rural: true,
+  wilds: true,
   decals: true,
   weatherfx: true,
   reflections: true,
@@ -192,6 +194,7 @@ export function createGraphicsEngine(opts = {}) {
   let kerbs = null;
   let skyline = null;
   let rural = null;
+  let wilds = null;
   let decals = null;
   let weatherfx = null;
 
@@ -277,6 +280,12 @@ export function createGraphicsEngine(opts = {}) {
       try { rural.dispose(); } catch (e) { /* ignore */ }
       rural = null;
       modules.rural = null;
+    }
+    if (wilds) {
+      if (wilds.group.parent) wilds.group.parent.remove(wilds.group);
+      try { wilds.dispose(); } catch (e) { /* ignore */ }
+      wilds = null;
+      modules.wilds = null;
     }
     if (theme.decals !== false && decals) decals.clearDecals();
 
@@ -432,6 +441,28 @@ export function createGraphicsEngine(opts = {}) {
         return r;
       }, 'rural', failures);
       modules.rural = rural;
+    }
+
+    // The three remote themes: alpine rock and snow, desert mesas and saguaro,
+    // coastal sand and lighthouses. Like `rural.js` this rebuilds the track's
+    // terrain noise, so it needs the **unmangled** track seed; a no-op for the
+    // themes that have their own layer above.
+    if (settings.wilds !== false) {
+      wilds = safe(() => {
+        const w = createWilds({
+          theme: theme.theme,
+          seed: theme.seed != null ? theme.seed : 42,
+          curve,
+          width: theme.width || 12,
+          gapZones: theme.gapZones || [],
+          quality: settings.quality,
+          density: settings.wildsDensity != null ? settings.wildsDensity : 1,
+          lighting: modules.lighting,
+        });
+        if (scene && w.group.children.length) scene.add(w.group);
+        return w;
+      }, 'wilds', failures);
+      modules.wilds = wilds;
     }
   }
 
@@ -649,6 +680,7 @@ export function createGraphicsEngine(opts = {}) {
     if (kerbs) kerbs.update(dt, full);
     if (skyline) skyline.update(dt, full);
     if (rural) rural.update(dt, full);
+    if (wilds) wilds.update(dt, full);
     if (decals) decals.update(dt, full);
     if (modules.weatherfx) {
       full.groundY = ctx.groundY != null ? ctx.groundY : 0;
@@ -675,7 +707,7 @@ export function createGraphicsEngine(opts = {}) {
     // Track content lives in the caller's scene, not this engine's: take it back
     // out before releasing its buffers, or a disposed engine leaves a ghost
     // circuit (and a skyline) parented behind it.
-    for (const m of [props, dynamicProps, screens, roadDetail, crew, kerbs, skyline, rural]) {
+    for (const m of [props, dynamicProps, screens, roadDetail, crew, kerbs, skyline, rural, wilds]) {
       if (m && m.group && m.group.parent) m.group.parent.remove(m.group);
     }
     if (props) { try { props.dispose(); } catch (e) { /* ignore */ } props = null; }
@@ -686,6 +718,7 @@ export function createGraphicsEngine(opts = {}) {
     if (kerbs) { try { kerbs.dispose(); } catch (e) { /* ignore */ } kerbs = null; }
     if (skyline) { try { skyline.dispose(); } catch (e) { /* ignore */ } skyline = null; }
     if (rural) { try { rural.dispose(); } catch (e) { /* ignore */ } rural = null; }
+    if (wilds) { try { wilds.dispose(); } catch (e) { /* ignore */ } wilds = null; }
     for (const key of Object.keys(modules)) {
       const m = modules[key];
       if (m && m.dispose) {
@@ -724,6 +757,7 @@ export function createGraphicsEngine(opts = {}) {
     get kerbs() { return kerbs || modules.kerbs; },
     get skyline() { return skyline || modules.skyline; },
     get rural() { return rural || modules.rural; },
+    get wilds() { return wilds || modules.wilds; },
     get decals() { return decals; },
     get weatherfx() { return modules.weatherfx; },
     get reflections() { return modules.reflections; },

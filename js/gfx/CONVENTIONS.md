@@ -51,6 +51,8 @@ js/gfx/
   kerbs.js            raised bevelled apex kerbs
   skyline.js          city skyline: towers, podiums, signs, beacons (city, tokyo)
   rural.js            farmland, hedgerows, farmsteads, leaves (countryside, forest)
+  wilds.js            rock and snow, mesas and saguaro, coast and lighthouse
+                      (alpine, desert, coastal)
   geometry.js         geometry helper library
   car.js              detailed procedural hypercar
   materials.js        advanced PBR material library
