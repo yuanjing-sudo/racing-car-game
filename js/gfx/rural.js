@@ -9,7 +9,7 @@ import {
   getPaintedMetalMaterial,
   TIME_UNIFORM,
 } from './materials.js';
-import { getTerrainHeight } from '../track.js';
+import { getGradedTerrainHeight } from '../track.js';
 import { createNoise2D } from '../utils.js';
 
 /**
@@ -51,10 +51,12 @@ import { createNoise2D } from '../utils.js';
  *
  * Terrain
  * -------
- * Hills come from `getTerrainHeight(x, z, theme, noise)` in `track.js`, using the
- * *track's own seed*, so this module seats its fields on exactly the surface the
- * rest of the game draws. No floating barns. (See the `seed` option: it must be
- * the unmangled track seed, not a per-module one.)
+ * Hills come from `getGradedTerrainHeight(x, z, theme, noise, curve)` in
+ * `track.js` — the raw terrain graded to the road's own height near the lap,
+ * which is the surface the terrain mesh is built from — using the *track's own
+ * seed*, so this module seats its fields on exactly the surface the rest of the
+ * game draws. No floating barns. (See the `seed` option: it must be the
+ * unmangled track seed, not a per-module one.)
  *
  * Cost
  * ----
@@ -462,14 +464,16 @@ export function createRural(opts = {}) {
 
   /* -------------------------------------------------------------- terrain ---- */
 
-  // The same noise the track was built with: `createTrack` does
-  // `createNoise2D(seed)` and the terrain mesh is drawn from
-  // `getTerrainHeight(..., noise)`, so seeding identically seats everything here
-  // on the surface the player is actually looking at.
+  // The same noise the track was built with: `createTrack` does `createNoise2D(seed)`
+  // and the terrain mesh is drawn from the same seed. Seating through
+  // `getGradedTerrainHeight` (rather than the raw terrain) is what makes fields,
+  // hedges, poles and barns land on the surface the player is actually looking
+  // at: the mesh is graded flat to the road's height near the lap, so the raw
+  // height differs from it by metres inside the first 30 m.
   const noise = createNoise2D(seed);
 
   function groundAt(x, z) {
-    const y = getTerrainHeight(x, z, theme, noise);
+    const y = getGradedTerrainHeight(x, z, theme, noise, curve);
     return Number.isFinite(y) ? y : 0;
   }
 
