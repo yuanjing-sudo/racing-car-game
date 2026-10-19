@@ -8,6 +8,7 @@ import { createGraphicsPipeline, QUALITY_PRESETS } from './post/index.js';
 import { createProps } from './props.js';
 import { createDynamicProps } from './dynamicprops.js';
 import { createScreens } from './screens.js';
+import { createRoadDetail } from './roaddetail.js';
 import { createDecals } from './decals.js';
 import { createWeatherFx } from './weatherfx.js';
 import { createReflections } from './reflections.js';
@@ -104,6 +105,7 @@ const DEFAULT_SETTINGS = {
   dynamic: true,
   dynamicDensity: 1,
   screens: true,
+  roaddetail: true,
   decals: true,
   weatherfx: true,
   reflections: true,
@@ -177,6 +179,7 @@ export function createGraphicsEngine(opts = {}) {
   let props = null;
   let dynamicProps = null;
   let screens = null;
+  let roadDetail = null;
   let decals = null;
   let weatherfx = null;
 
@@ -232,6 +235,12 @@ export function createGraphicsEngine(opts = {}) {
       try { screens.dispose(); } catch (e) { /* ignore */ }
       screens = null;
       modules.screens = null;
+    }
+    if (roadDetail) {
+      if (roadDetail.group.parent) roadDetail.group.parent.remove(roadDetail.group);
+      try { roadDetail.dispose(); } catch (e) { /* ignore */ }
+      roadDetail = null;
+      modules.roaddetail = null;
     }
     if (theme.decals !== false && decals) decals.clearDecals();
 
@@ -292,6 +301,23 @@ export function createGraphicsEngine(opts = {}) {
         return s;
       }, 'screens', failures);
       modules.screens = screens;
+    }
+
+    // Surface wear: repair patches, tar snakes, seams, drains, marbles.
+    if (settings.roaddetail !== false) {
+      roadDetail = safe(() => {
+        const r = createRoadDetail({
+          theme: theme.theme,
+          seed: (theme.seed != null ? theme.seed : 42) ^ 0x2b9,
+          curve,
+          width: theme.width || 12,
+          quality: settings.quality,
+          density: settings.roadDensity != null ? settings.roadDensity : 1,
+        });
+        if (scene) scene.add(r.group);
+        return r;
+      }, 'roaddetail', failures);
+      modules.roaddetail = roadDetail;
     }
   }
 
@@ -504,6 +530,7 @@ export function createGraphicsEngine(opts = {}) {
     if (props) props.update(dt, full);
     if (dynamicProps) dynamicProps.update(dt, full);
     if (screens) screens.update(dt, full);
+    if (roadDetail) roadDetail.update(dt, full);
     if (decals) decals.update(dt, full);
     if (modules.weatherfx) {
       full.groundY = ctx.groundY != null ? ctx.groundY : 0;
@@ -530,6 +557,7 @@ export function createGraphicsEngine(opts = {}) {
     if (props) { try { props.dispose(); } catch (e) { /* ignore */ } props = null; }
     if (dynamicProps) { try { dynamicProps.dispose(); } catch (e) { /* ignore */ } dynamicProps = null; }
     if (screens) { try { screens.dispose(); } catch (e) { /* ignore */ } screens = null; }
+    if (roadDetail) { try { roadDetail.dispose(); } catch (e) { /* ignore */ } roadDetail = null; }
     for (const key of Object.keys(modules)) {
       const m = modules[key];
       if (m && m.dispose) {
@@ -563,6 +591,7 @@ export function createGraphicsEngine(opts = {}) {
     get props() { return props || modules.props; },
     get dynamicprops() { return dynamicProps || modules.dynamicprops; },
     get screens() { return screens || modules.screens; },
+    get roaddetail() { return roadDetail || modules.roaddetail; },
     get decals() { return decals; },
     get weatherfx() { return modules.weatherfx; },
     get reflections() { return modules.reflections; },
