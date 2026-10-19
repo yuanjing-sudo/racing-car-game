@@ -141,6 +141,9 @@ motivated world layer on top of the existing track and scenery:
 | **Media** | `screens.js` | LED jumbotrons on truss legs, barrier ribbon boards and a timing tower, each an emissive canvas surface cycling generated programmes — a broadcast "feed", a classification, sponsor reels, a lap slate and scrolling arrows — overlaid with an LED grid and lit for the time of day |
 | **Skyline** | `skyline.js` | the city over the barrier, for `city` and `tokyo`: towers massed as slab, setback, tapered, chamfered, twinned or spire plans, each with a wider podium, a curtain wall whose window texture tiles exactly one storey, proud cornices at every step, rooftop chillers, cooling towers, water tanks, stair penthouses, dishes and masts, blade signs that spill into the glow pool, and blinking aviation beacons. Laid out as city blocks on near and mid rings behind a cheap fog-shot silhouette ring — a whole skyline in ~14 draws |
 | **Countryside** | `rural.js` | the land either side of a country road, for `countryside` and `forest`: a patchwork of fields gridded in lap space and dropped onto the real terrain, UV-mapped in metres so a crop row is a physical width (wheat, pasture, plough, maize, rape, fallow), hedgerows and post-and-wire fences along the boundaries, barns, corrugated silos, farmhouses whose windows light up after dark and a windpump whose rotor turns per frame, telegraph poles, hay bales, and leaves — canopies built from alpha-cut leaf-clump cards and fallen litter on the verge, all gusting in the vertex shader |
+| **Alpine** | `wilds.js` | rock faces and scree, snow caps on the rock that stands above the snowline, stands of conifer, timber chalets with snow on their roofs and lit windows, dry-stone walls along the verge, roadside snow poles, and a cable car: lattice pylons walking up the hillside with a sagging cable strung between them and gondolas that travel it, per frame |
+| **Desert** | `wilds.js` | stratified mesas with talus skirts, boulders, saguaro cacti, scrub, wind-rippled sand along the verge, and an adobe fuel stop — a long low block with a canopy over the pumps, a water tower and a neon sign in the glow pool. Tumbleweeds roll down the verge, per frame |
+| **Coastal** | `wilds.js` | a sand strip that follows the shoreline, boulders, palms, timber piers on pilings, beach huts and parasols, buoys bobbing on the swell, and a lighthouse whose beam sweeps round, per frame |
 | **Camera** | `cinematic.js` | a shot director (orbit, trackside pan, ground dolly, crane, wheel macro, flyby, top-down) with cuts, easing and seeded variety; auto-focus driven into the DOF pass; fadeable 2.39:1 letterbox; requested slow motion; trauma-model impact shake and a nitro lens punch |
 | **Look** | `materials.js`, `reflections.js` | procedural PBR library with a shared wetness blend; PMREM image-based lighting baked per theme |
 | **Hero** | `car.js` | lofted hypercar body, glass canopy, sculpted fenders, intakes, canards, a multi-element wing, straked diffuser, a full visible cockpit and per-style wheels with spokes, barrel, vented disc and caliper |
@@ -169,7 +172,7 @@ js/
     index.js sky.js volumetrics.js lighting.js shadows.js
     materials.js reflections.js props.js geometry.js decals.js
     particles.js weatherfx.js dynamicprops.js screens.js cinematic.js
-    roaddetail.js crew.js kerbs.js skyline.js rural.js car.js
+    roaddetail.js crew.js kerbs.js skyline.js rural.js wilds.js car.js
     CONVENTIONS.md
     post/             HDR post-processing chain (9 effects + orchestrator)
 unreal/TokyoDreamCircuit/   Unreal Engine 5.5 C++ starter project
