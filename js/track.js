@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createNoise2D, fbm, lerp, clamp, randomRange, createRadialTexture, smoothstep } from './utils.js';
+import { createNoise2D, fbm, lerp, clamp, createRadialTexture, smoothstep } from './utils.js';
 import {
   getRoadMaterial,
   getRoadLineMaterial,
@@ -19,12 +19,17 @@ export const TRACK_THEMES = [
 
 export function createTrack(theme = 'alpine', seed = 42) {
   const noise = createNoise2D(seed);
+  // Width and gap placement used to come from `randomRange()`, i.e. from
+  // Math.random(), so the same seed gave a different circuit every load — the
+  // car was tuned against a 14 m road and sometimes got 16 m. Draw them from the
+  // seed too, so `createTrack(theme, seed)` is fully reproducible.
+  const rng = mulberry32(seed);
   const trackGroup = new THREE.Group();
   const trackData = { checkpoints: [], sectors: [], length: 0, theme, noise, gapZones: [] };
 
   const numPoints = 140;
   const points = [];
-  const trackWidth = 14 + randomRange(-2, 2);
+  const trackWidth = 14 + (rng() * 4 - 2);
   const elevation = getTrackElevationFactor(theme) * 1.6;
 
   // A high-speed circuit needs sweeping, low-curvature corners. The layout is
@@ -64,7 +69,7 @@ export function createTrack(theme = 'alpine', seed = 42) {
   const gapZones = [];
   const numGaps = theme === 'city' || theme === 'tokyo' ? 0 : 3;
   for (let g = 0; g < numGaps; g++) {
-    const tStart = 0.12 + g * 0.28 + randomRange(-0.02, 0.02);
+    const tStart = 0.12 + g * 0.28 + (rng() * 0.04 - 0.02);
     const tEnd = Math.min(tStart + 0.055, 0.95);
     gapZones.push({ tStart, tEnd });
   }
