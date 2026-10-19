@@ -59,7 +59,7 @@ export function createProps(opts = {}) {
 
   const disposables = [];
   const stats = { meshes: 0, instances: 0, lights: 0, glows: 0 };
-  const animated = { flags: [], neons: [], startLights: [], crowd: null };
+  const animated = { flags: [], neons: [], startLights: [], crowd: null, crowdFlashes: [] };
 
   /* --------------------------------------------------------------- helpers ---- */
 
@@ -189,6 +189,10 @@ export function createProps(opts = {}) {
 
   /* -------------------------------------------------------------- grandstands */
 
+  // Shared by every stand so the whole circuit's flashguns are one material.
+  let crowdFlashGeo = null;
+  let crowdFlashMat = null;
+
   function buildGrandstands(count) {
     const T = [0.06, 0.27, 0.52, 0.78];
     for (let i = 0; i < Math.min(count, T.length); i++) {
@@ -210,6 +214,7 @@ export function createProps(opts = {}) {
       const crowdMat = getCrowdMaterial();
       const crowdGeo = new THREE.PlaneGeometry(1.0, 1.5);
       const mats = [];
+      const flashSeats = [];
       const cols = Math.floor(gs.width / 1.15);
       const rows = gs.rows;
       for (let r = 0; r < rows; r++) {
@@ -225,9 +230,57 @@ export function createProps(opts = {}) {
           );
           const world = placeAt(f).multiply(local);
           mats.push(world);
+          // A few spectators are photographing the race.
+          if (random() < 0.05) flashSeats.push({ x, y: y + 0.40, z: z + 0.14 });
         }
       }
       addInstanced(crowdGeo, crowdMat, mats, 'crowd');
+
+      // Camera flashes in the stands. One additive instanced quad per flash,
+      // re-scaled from a per-seat timer so the stand sparkles at night.
+      if (flashSeats.length && quality !== 'low') {
+        if (!crowdFlashGeo) {
+          crowdFlashGeo = new THREE.PlaneGeometry(0.46, 0.34);
+          crowdFlashMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff, toneMapped: false, transparent: true, opacity: 0.95,
+            depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+          });
+          disposables.push(crowdFlashGeo, crowdFlashMat);
+        }
+        const mesh = new THREE.InstancedMesh(crowdFlashGeo, crowdFlashMat, flashSeats.length);
+        mesh.name = 'CrowdFlashes';
+        mesh.frustumCulled = false;
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+        const pos = [];
+        const quat = [];
+        const timer = new Float32Array(flashSeats.length);
+        const local = new THREE.Matrix4();
+        const p = new THREE.Vector3();
+        const q = new THREE.Quaternion();
+        const sc = new THREE.Vector3();
+        const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+
+        for (let k = 0; k < flashSeats.length; k++) {
+          const fs = flashSeats[k];
+          local.compose(
+            new THREE.Vector3(fs.x, fs.y, fs.z),
+            new THREE.Quaternion(),
+            new THREE.Vector3(1, 1, 1)
+          );
+          const world = placeAt(f).multiply(local);
+          world.decompose(p, q, sc);
+          pos.push(p.clone());
+          quat.push(q.clone());
+          timer[k] = random() * 4;
+          mesh.setMatrixAt(k, zero);
+        }
+        mesh.instanceMatrix.needsUpdate = true;
+        group.add(mesh);
+        stats.meshes++;
+        stats.instances += flashSeats.length;
+        animated.crowdFlashes.push({ mesh, pos, quat, timer, life: new Float32Array(flashSeats.length) });
+      }
 
       // a few light masts at the corners of the stand
       if (quality !== 'low') {
@@ -452,6 +505,7 @@ export function createProps(opts = {}) {
   /* ------------------------------------------------------------------ runtime */
 
   let time = 0;
+  const _zeroFlash = new THREE.Matrix4().makeScale(0, 0, 0);
   let startPhase = 0; // 0 idle, 1 counting, 2 green
   let startTimer = 0;
 
@@ -501,6 +555,33 @@ export function createProps(opts = {}) {
       } else {
         mat.emissiveIntensity = Math.max(0, mat.emissiveIntensity - step * 6);
       }
+    }
+
+    // Crowd camera flashes: each seat fires on its own clock. The quads are
+    // scaled to zero between pops, so the whole stand is one cheap draw call.
+    const flashGain = ctx.isNight === false ? 0.55 : 1;
+    if (crowdFlashMat) crowdFlashMat.opacity = 0.95 * flashGain;
+    for (const f of animated.crowdFlashes) {
+      let dirty = false;
+      for (let i = 0; i < f.timer.length; i++) {
+        f.timer[i] -= step;
+        if (f.timer[i] <= 0) {
+          f.life[i] = 1;
+          f.timer[i] = (ctx.isNight === false ? 2.0 : 0.35)
+            + random() * (ctx.isNight === false ? 4.0 : 1.8);
+        }
+        if (f.life[i] > 0) {
+          f.life[i] = Math.max(0, f.life[i] - step * 4.0);
+          const s = 0.55 + f.life[i] * 1.1;
+          _m4.compose(f.pos[i], f.quat[i], _s.setScalar(s));
+          f.mesh.setMatrixAt(i, _m4);
+          dirty = true;
+        } else {
+          f.mesh.setMatrixAt(i, _zeroFlash);
+          dirty = true;
+        }
+      }
+      if (dirty) f.mesh.instanceMatrix.needsUpdate = true;
     }
   }
 

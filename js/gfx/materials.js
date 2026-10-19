@@ -586,10 +586,32 @@ export function getLightBeamMaterial(color = 0xfff3d6) {
 }
 
 export function getCrowdMaterial(tint = 0xffffff) {
-  return cachedMat(`crowd:${tint}`, () => new THREE.MeshStandardMaterial({
-    map: getCrowdTexture(), color: tint, roughness: 0.9, metalness: 0.0,
-    side: THREE.DoubleSide,
-  }));
+  return cachedMat(`crowd:${tint}`, () => {
+    const m = new THREE.MeshStandardMaterial({
+      map: getCrowdTexture(), color: tint, roughness: 0.9, metalness: 0.0,
+      side: THREE.DoubleSide,
+    });
+    // Spectators are instanced billboards. A tiny vertex-shader cheer — a
+    // vertical hop plus a sway — is enough to stop a full grandstand reading as
+    // a painted wall, and it costs nothing on the CPU. The instance's world
+    // position seeds the phase so neighbouring seats are out of step.
+    m.onBeforeCompile = (shader) => {
+      shader.uniforms.uCrowdTime = TIME_UNIFORM;
+      shader.vertexShader = 'uniform float uCrowdTime;\n' + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        #ifdef USE_INSTANCING
+          float seed = instanceMatrix[3].x * 0.37 + instanceMatrix[3].z * 0.23;
+          float hop = max(0.0, sin(uCrowdTime * 3.1 + seed * 1.7));
+          transformed.y += hop * hop * 0.085;
+          transformed.x += sin(uCrowdTime * 1.7 + seed) * 0.028;
+        #endif`
+      );
+    };
+    m.customProgramCacheKey = () => 'crowd-cheer';
+    return m;
+  });
 }
 
 export function getBannerMaterial(color = 0xff2e2e, text = null) {

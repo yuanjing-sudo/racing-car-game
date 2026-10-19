@@ -10,6 +10,7 @@ import { createDynamicProps } from './dynamicprops.js';
 import { createScreens } from './screens.js';
 import { createRoadDetail } from './roaddetail.js';
 import { createCrew } from './crew.js';
+import { createKerbs } from './kerbs.js';
 import { createDecals } from './decals.js';
 import { createWeatherFx } from './weatherfx.js';
 import { createReflections } from './reflections.js';
@@ -108,6 +109,7 @@ const DEFAULT_SETTINGS = {
   screens: true,
   roaddetail: true,
   crew: true,
+  kerbs: true,
   decals: true,
   weatherfx: true,
   reflections: true,
@@ -183,6 +185,7 @@ export function createGraphicsEngine(opts = {}) {
   let screens = null;
   let roadDetail = null;
   let crew = null;
+  let kerbs = null;
   let decals = null;
   let weatherfx = null;
 
@@ -250,6 +253,12 @@ export function createGraphicsEngine(opts = {}) {
       try { crew.dispose(); } catch (e) { /* ignore */ }
       crew = null;
       modules.crew = null;
+    }
+    if (kerbs) {
+      if (kerbs.group.parent) kerbs.group.parent.remove(kerbs.group);
+      try { kerbs.dispose(); } catch (e) { /* ignore */ }
+      kerbs = null;
+      modules.kerbs = null;
     }
     if (theme.decals !== false && decals) decals.clearDecals();
 
@@ -346,6 +355,24 @@ export function createGraphicsEngine(opts = {}) {
         return c;
       }, 'crew', failures);
       modules.crew = crew;
+    }
+
+    // Raised red-and-white apex kerbing.
+    if (settings.kerbs !== false) {
+      kerbs = safe(() => {
+        const k = createKerbs({
+          theme: theme.theme,
+          seed: (theme.seed != null ? theme.seed : 42) ^ 0x77c1,
+          curve,
+          width: theme.width || 12,
+          gapZones: theme.gapZones || [],
+          quality: settings.quality,
+          density: settings.kerbDensity != null ? settings.kerbDensity : 1,
+        });
+        if (scene) scene.add(k.group);
+        return k;
+      }, 'kerbs', failures);
+      modules.kerbs = kerbs;
     }
   }
 
@@ -560,6 +587,7 @@ export function createGraphicsEngine(opts = {}) {
     if (screens) screens.update(dt, full);
     if (roadDetail) roadDetail.update(dt, full);
     if (crew) crew.update(dt, full);
+    if (kerbs) kerbs.update(dt, full);
     if (decals) decals.update(dt, full);
     if (modules.weatherfx) {
       full.groundY = ctx.groundY != null ? ctx.groundY : 0;
@@ -588,6 +616,7 @@ export function createGraphicsEngine(opts = {}) {
     if (screens) { try { screens.dispose(); } catch (e) { /* ignore */ } screens = null; }
     if (roadDetail) { try { roadDetail.dispose(); } catch (e) { /* ignore */ } roadDetail = null; }
     if (crew) { try { crew.dispose(); } catch (e) { /* ignore */ } crew = null; }
+    if (kerbs) { try { kerbs.dispose(); } catch (e) { /* ignore */ } kerbs = null; }
     for (const key of Object.keys(modules)) {
       const m = modules[key];
       if (m && m.dispose) {
@@ -623,6 +652,7 @@ export function createGraphicsEngine(opts = {}) {
     get screens() { return screens || modules.screens; },
     get roaddetail() { return roadDetail || modules.roaddetail; },
     get crew() { return crew || modules.crew; },
+    get kerbs() { return kerbs || modules.kerbs; },
     get decals() { return decals; },
     get weatherfx() { return modules.weatherfx; },
     get reflections() { return modules.reflections; },

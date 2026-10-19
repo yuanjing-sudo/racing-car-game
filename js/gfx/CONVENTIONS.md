@@ -48,6 +48,7 @@ js/gfx/
   screens.js          trackside LED media: jumbotrons, ribbons, timing tower
   roaddetail.js       asphalt wear: patches, tar snakes, seams, drains, marbles
   crew.js             marshals, camera operators, photographers
+  kerbs.js            raised bevelled apex kerbs
   geometry.js         geometry helper library
   car.js              detailed procedural hypercar
   materials.js        advanced PBR material library
