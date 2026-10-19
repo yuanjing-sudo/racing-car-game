@@ -207,11 +207,15 @@ export function getAsphaltMaps() {
 
     const normal = normalMapCanvas(heightCanvas(256, 4242), 1.5);
 
-    return {
-      map: texFromCanvas(albedo, { repeat: 6, srgb: true }),
-      roughnessMap: texFromCanvas(rough, { repeat: 3 }),
-      normalMap: texFromCanvas(normal, { repeat: 5 }),
-    };
+    const map = texFromCanvas(albedo, { repeat: 6, srgb: true });
+    const roughnessMap = texFromCanvas(rough, { repeat: 3 });
+    const normalMap = texFromCanvas(normal, { repeat: 5 });
+    // The tarmac is viewed at a very grazing angle most of the time. Without
+    // anisotropic filtering the 512px maps smear into big blobs and the road
+    // reads as cobblestones instead of asphalt.
+    for (const t of [map, roughnessMap, normalMap]) t.anisotropy = 8;
+
+    return { map, roughnessMap, normalMap };
   });
 }
 
@@ -243,7 +247,7 @@ export function getRoadMaterial(theme = 'alpine') {
     map: maps.map,
     roughnessMap: maps.roughnessMap,
     normalMap: maps.normalMap,
-    normalScale: new THREE.Vector2(0.55, 0.55),
+    normalScale: new THREE.Vector2(0.45, 0.45),
     roughness: 1.0,
     metalness: p.metalness,
     envMapIntensity: p.envMapIntensity,
