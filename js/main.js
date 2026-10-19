@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createCarModel, CAR_PAINT_COLORS } from './car.js';
 import { createDefaultPhysics } from './physics.js';
-import { createTrack, TRACK_THEMES, getTerrainHeight } from './track.js';
+import { createTrack, TRACK_THEMES, getGradedTerrainHeight } from './track.js';
 import { createScenery } from './scenery.js';
 import { createScene, createCamera, createRenderer } from './environment.js';
 import { createGraphicsEngine } from './gfx/index.js';
@@ -472,7 +472,9 @@ class Game {
     }
     const onRoad = nearestDist < (this.trackData.width / 2 + 4);
     if (onRoad) return pts[nearestIdx].y;
-    return getTerrainHeight(x, z, this.trackData.theme, this.trackData.noise);
+    // Off the tarmac the car stands on the drawn ground, which is the terrain
+    // graded to the road's height near the lap, not the raw terrain.
+    return getGradedTerrainHeight(x, z, this.trackData.theme, this.trackData.noise, this.trackData.curve);
   }
 
   startRenderLoop() {

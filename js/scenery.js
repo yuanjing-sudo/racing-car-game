@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { createNoise2D, lerp } from './utils.js';
-import { getTerrainHeight } from './track.js';
+import { createNoise2D } from './utils.js';
+import { getGradedTerrainHeight } from './track.js';
 import { getTerrainMaterial, applyWindSway } from './materials.js';
 
 export function createScenery(theme = 'alpine', seed = 42, trackCurve = null) {
@@ -62,38 +62,14 @@ function createTerrain(theme, noise, trackCurve) {
 
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const z = pos.getZ(i);
-
-    let h = getTerrainHeight(x, z, theme, noise);
-
-    if (trackCurve) {
-      let minDist = Infinity;
-      for (let j = 0; j < 100; j++) {
-        const t = j / 100;
-        const pt = trackCurve.getPointAt(t);
-        const dist = Math.sqrt((x - pt.x) ** 2 + (z - pt.z) ** 2);
-        if (dist < minDist) minDist = dist;
-      }
-      if (minDist < 20) {
-        const blend = smoothstep(20, 8, minDist);
-        h = lerp(h, 0, blend);
-      } else if (minDist < 30) {
-        const blend = smoothstep(30, 20, minDist);
-        h = lerp(h, 0, blend * 0.5);
-      }
-    }
-
-    pos.setY(i, h);
+    // Graded to the road's own height near the lap, not to y = 0: see
+    // getGradedTerrainHeight. The terrain mesh, the scenery and the gfx layer
+    // all seat through this, so they agree on where the ground actually is.
+    pos.setY(i, getGradedTerrainHeight(pos.getX(i), pos.getZ(i), theme, noise, trackCurve));
   }
 
   geo.computeVertexNormals();
   return geo;
-}
-
-function smoothstep(edge0, edge1, x) {
-  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
 }
 
 /* ------------------------------------------------------------------ *
@@ -203,7 +179,7 @@ function addTrees(group, theme, noise, trackCurve, seed) {
 
     if (trackCurve && isTooCloseToTrack(x, z, trackCurve, 25)) continue;
 
-    const y = getTerrainHeight(x, z, theme, noise);
+    const y = getGradedTerrainHeight(x, z, theme, noise, trackCurve);
     const scale = 0.6 + rng() * 1.2;
 
     dummy.position.set(x, y + scale, z);
@@ -249,7 +225,7 @@ function addRocks(group, theme, noise, trackCurve, seed) {
 
     if (trackCurve && isTooCloseToTrack(x, z, trackCurve, 20)) continue;
 
-    const y = getTerrainHeight(x, z, theme, noise);
+    const y = getGradedTerrainHeight(x, z, theme, noise, trackCurve);
     const scale = 0.3 + rng() * 2.0;
 
     dummy.position.set(x, y + scale * 0.3, z);
@@ -457,7 +433,7 @@ function addGrassPatches(group, theme, noise, trackCurve, seed) {
 
     if (trackCurve && isTooCloseToTrack(x, z, trackCurve, 18)) continue;
 
-    const y = getTerrainHeight(x, z, theme, noise);
+    const y = getGradedTerrainHeight(x, z, theme, noise, trackCurve);
     dummy.position.set(x, y, z);
     dummy.rotation.set((rng() - 0.5) * 0.4, rng() * Math.PI * 2, (rng() - 0.5) * 0.3);
     const s = 0.6 + rng() * 1.0;
@@ -527,7 +503,7 @@ function addCacti(group, noise, trackCurve, seed) {
 
     if (trackCurve && isTooCloseToTrack(x, z, trackCurve, 20)) continue;
 
-    const y = getTerrainHeight(x, z, 'desert', noise);
+    const y = getGradedTerrainHeight(x, z, 'desert', noise, trackCurve);
     const scale = 0.5 + rng() * 1.5;
 
     dummy.position.set(x, y + scale, z);
@@ -553,7 +529,14 @@ function addWaterBody(group, trackCurve, theme) {
   });
   const water = new THREE.Mesh(waterGeo, waterMat);
   water.rotation.x = -Math.PI / 2;
-  water.position.set(0, -0.5, -250);
+  // The sea belongs below the lowest point of the lap: a coast the road can run
+  // along, not one it can drown in. The land beyond the graded verge still dips
+  // under it, so the bays are where the terrain says they are.
+  let lowest = Infinity;
+  if (trackCurve) {
+    for (let i = 0; i <= 200; i++) lowest = Math.min(lowest, trackCurve.getPointAt(i / 200).y);
+  }
+  water.position.set(0, Number.isFinite(lowest) ? lowest - 1.2 : -3.5, -250);
   group.add(water);
 }
 
@@ -577,7 +560,7 @@ function addMushrooms(group, noise, trackCurve, seed) {
 
     if (trackCurve && isTooCloseToTrack(x, z, trackCurve, 18)) continue;
 
-    const y = getTerrainHeight(x, z, 'forest', noise);
+    const y = getGradedTerrainHeight(x, z, 'forest', noise, trackCurve);
     const scale = 0.5 + rng() * 1.5;
 
     dummy.scale.setScalar(scale);

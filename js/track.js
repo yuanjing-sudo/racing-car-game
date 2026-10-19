@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createNoise2D, fbm, lerp, clamp, randomRange, createRadialTexture } from './utils.js';
+import { createNoise2D, fbm, lerp, clamp, randomRange, createRadialTexture, smoothstep } from './utils.js';
 import {
   getRoadMaterial,
   getRoadLineMaterial,
@@ -268,6 +268,90 @@ export function getTerrainHeight(x, z, theme, noise) {
     case 'countryside': return base * 12 + 1;
     default: return base * 15;
   }
+}
+
+/**
+ * The closed lap sampled along its length, cached per curve.
+ *
+ * `getGradedTerrainHeight` walks this every time it runs, and the terrain plane
+ * alone asks for it 16 641 times, so it is built once per track rather than once
+ * per call. 256 points is about 6.5 m apart on these laps: fine enough that the
+ * chord is within centimetres of the curve vertically.
+ */
+const LAP_LINE_CACHE = new WeakMap();
+function lapLine(curve) {
+  let line = LAP_LINE_CACHE.get(curve);
+  if (!line) {
+    line = [];
+    const N = 256;
+    for (let j = 0; j < N; j++) line.push(curve.getPointAt(j / N));
+    LAP_LINE_CACHE.set(curve, line);
+  }
+  return line;
+}
+
+/**
+ * The surface the world is actually built on: the raw terrain graded flat to the
+ * **road's own height** within 30 m of the centreline, so the ground meets the
+ * tarmac at the road edge instead of slicing through it.
+ *
+ * The road does not follow the raw terrain: `createTrack` puts it at
+ * `getTerrainHeight * elevation`, which is 0.48x for the countryside and 1.28x
+ * for the alpine. Grading the ground toward y = 0 (as this used to) therefore
+ * buried the tarmac — by up to 8.5 m on the alpine, 3.1 m in the forest, and by
+ * more than a metre on 96% of the coastal lap. Grading toward the nearest point
+ * of the lap fixes that for every theme, and is a no-op for city and tokyo, where
+ * road and terrain are both 0.
+ *
+ * Distance is measured to the nearest *point* on the centreline, not the nearest
+ * sample: snapping to samples leaves the road's own climb (a metre or two per
+ * sample on the alpine) as error in the graded height.
+ *
+ * Anything placed off the road should use this rather than `getTerrainHeight`, or
+ * it will float or sink by the difference. Pass the same curve the track was
+ * built from.
+ *
+ * @param {number} x world X
+ * @param {number} z world Z
+ * @param {string} theme track theme
+ * @param {Function} [noise] the track's own noise, from `createTrack`
+ * @param {THREE.Curve} [curve] the track centreline
+ * @returns {number} ground height in metres
+ */
+export function getGradedTerrainHeight(x, z, theme, noise, curve) {
+  const raw = getTerrainHeight(x, z, theme, noise);
+  if (!curve) return raw;
+
+  const line = lapLine(curve);
+  const n = line.length;
+  if (n < 2) return raw;
+
+  let best = Infinity;
+  let roadY = 0;
+  for (let j = 0; j < n; j++) {
+    const a = line[j];
+    const b = line[j + 1 === n ? 0 : j + 1];
+    const ex = b.x - a.x;
+    const ez = b.z - a.z;
+    const len2 = ex * ex + ez * ez;
+    let u = 0;
+    if (len2 > 1e-9) {
+      u = ((x - a.x) * ex + (z - a.z) * ez) / len2;
+      u = u < 0 ? 0 : (u > 1 ? 1 : u);
+    }
+    const dx = x - (a.x + ex * u);
+    const dz = z - (a.z + ez * u);
+    const d2 = dx * dx + dz * dz;
+    if (d2 < best) {
+      best = d2;
+      roadY = a.y + (b.y - a.y) * u;
+    }
+  }
+
+  const dist = Math.sqrt(best);
+  if (dist < 20) return lerp(raw, roadY, smoothstep(20, 8, dist));
+  if (dist < 30) return lerp(raw, roadY, smoothstep(30, 20, dist) * 0.5);
+  return raw;
 }
 
 function createBarriers(group, curve, width, divisions, theme, gapZones) {

@@ -30,6 +30,13 @@ python3 -m http.server 8000      # or: npx serve
 | **Tokyo Dream Circuit** | **Rain-slicked neon night through Tokyo** |
 | Countryside Sprint | Rolling hills and farmland |
 
+Every circuit is cut into terrain that is **graded to the road**: within 30 m of
+the centreline the ground is pulled flat to the tarmac's own height, then ramps
+back out to the raw hills. The road never sits in a trench or on a causeway, and
+nothing placed off-road floats. `getGradedTerrainHeight()` in `js/track.js` is the
+single authority — the terrain mesh, the roadside scenery, the `js/gfx/` content
+and the off-track ground contact all sample it.
+
 ### Tokyo Dream Circuit
 
 The Tokyo Dream Circuit is authored as a single pass of cinematic neon night:
