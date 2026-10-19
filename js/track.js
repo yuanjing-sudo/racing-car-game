@@ -58,6 +58,7 @@ export function createTrack(theme = 'alpine', seed = 42) {
   }
 
   const curve = new THREE.CatmullRomCurve3(points, true, 'catmullrom', 0.5);
+  curve.userData = { roadHalfWidth: trackWidth / 2 };
   trackData.curve = curve;
   trackData.length = curve.getLength();
 
@@ -124,33 +125,68 @@ function buildTrackSegments(curve, width, divisions, gapZones, theme) {
 
 function createTrackMesh(curve, t0, t1, width, divisions, theme) {
   const segDivisions = Math.max(2, Math.floor(divisions * (t1 - t0)));
-  const shape = new THREE.Shape();
   const halfW = width / 2;
-  shape.moveTo(-halfW, 0);
-  shape.lineTo(halfW, 0);
-  const geo = new THREE.ExtrudeGeometry(shape, { steps: segDivisions, bevelEnabled: false });
-  const pos = geo.attributes.position;
-  const uv = geo.attributes.uv;
+  const vertCount = (segDivisions + 1) * 2;
+  const positions = new Float32Array(vertCount * 3);
+  const uvs = new Float32Array(vertCount * 2);
+  const indices = new Uint32Array(segDivisions * 6);
+  const pt = new THREE.Vector3();
+  const tangent = new THREE.Vector3();
+  const normal = new THREE.Vector3();
 
-  for (let i = 0; i < pos.count; i++) {
-    const idx = Math.floor(i / 2);
-    const rawT = t0 + (t1 - t0) * (idx / Math.max(1, segDivisions - 1));
+  for (let i = 0; i <= segDivisions; i++) {
+    const rawT = t0 + (t1 - t0) * (i / segDivisions);
     const t = isFinite(rawT) ? clamp(rawT, 0, 1) : 0;
-    const pt = curve.getPointAt(t) || new THREE.Vector3();
-    const tangent = curve.getTangentAt(t) || new THREE.Vector3(0, 0, 1);
-    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-    const isLeft = i % 2 === 0;
-    const offset = isLeft ? -halfW : halfW;
-    pos.setXYZ(i, pt.x + normal.x * offset, pt.y, pt.z + normal.z * offset);
+    curve.getPointAt(t, pt);
+    curve.getTangentAt(t, tangent);
+    normal.set(-tangent.z, 0, tangent.x).normalize();
+
+    // Two vertices per cross-section: left then right.  The old version
+    // remapped an ExtrudeGeometry that was built from an open line; the
+    // extrusion's vertex order did not match this indexing, so the road
+    // rendered as a zig-zag of disconnected triangles.  Building the strip
+    // explicitly keeps the surface watertight and lets us pick the winding.
+    const left = i * 2;
+    positions[left * 3] = pt.x + normal.x * halfW;
+    positions[left * 3 + 1] = pt.y;
+    positions[left * 3 + 2] = pt.z + normal.z * halfW;
+    positions[(left + 1) * 3] = pt.x - normal.x * halfW;
+    positions[(left + 1) * 3 + 1] = pt.y;
+    positions[(left + 1) * 3 + 2] = pt.z - normal.z * halfW;
 
     // Deterministic UVs so the wet-asphalt maps tile correctly:
     // u across the width, v along the length of the lap.
-    if (uv) {
-      uv.setXY(i, isLeft ? 0 : width * 0.25, t * 260);
+    const v = t * 260;
+    uvs[left * 2] = 0;
+    uvs[left * 2 + 1] = v;
+    uvs[(left + 1) * 2] = width * 0.25;
+    uvs[(left + 1) * 2 + 1] = v;
+
+    if (i < segDivisions) {
+      const a = left;
+      const b = left + 1;
+      const c = left + 2;
+      const d = left + 3;
+      const o = i * 6;
+      // Up-facing winding: (left, next-left, right) and (right, next-left,
+      // next-right).
+      indices[o] = a;
+      indices[o + 1] = c;
+      indices[o + 2] = b;
+      indices[o + 3] = b;
+      indices[o + 4] = c;
+      indices[o + 5] = d;
     }
   }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geo.setIndex(new THREE.BufferAttribute(indices, 1));
   geo.computeVertexNormals();
-  return new THREE.Mesh(geo, getRoadMaterial(theme));
+  const mesh = new THREE.Mesh(geo, getRoadMaterial(theme));
+  mesh.name = 'TrackRoad';
+  return mesh;
 }
 
 function buildCurbSegments(curve, width, divisions, gapZones, theme) {
@@ -354,8 +390,16 @@ export function getGradedTerrainHeight(x, z, theme, noise, curve) {
   }
 
   const dist = Math.sqrt(best);
-  if (dist < 20) return lerp(raw, roadY, smoothstep(20, 8, dist));
-  if (dist < 30) return lerp(raw, roadY, smoothstep(30, 20, dist) * 0.5);
+  // Keep the drawn ground below the tarmac across the whole road width.  The
+  // terrain grid is coarse (one vertex every few metres), so grading it merely
+  // *to* the road height lets a triangle bridge over the road and bury it.
+  // The clearance tapers out over the shoulder so the verge still meets the
+  // tarmac.
+  const halfW = (curve.userData && curve.userData.roadHalfWidth) || 7;
+  const clearance = 0.25 * (1 - smoothstep(halfW, halfW + 2, dist));
+  const gradeY = roadY - clearance;
+  if (dist < 20) return lerp(raw, gradeY, smoothstep(20, 8, dist));
+  if (dist < 30) return lerp(raw, gradeY, smoothstep(30, 20, dist) * 0.5);
   return raw;
 }
 

@@ -325,8 +325,10 @@ export function createVolumetrics({ renderer, scene, camera } = {}) {
     noiseAmount: 0.55,
     noiseSpeed: 0.35,
     mieg: 0.52,
-    sunIntensity: 1.6,
-    ambient: 0.16,
+    sunIntensity: 2.2,
+    // A low ambient term made the horizon band almost black on clear days.
+    // The haze should read as air, not as a wall.
+    ambient: 0.55,
     groundY: 0,
     topHeight: 90,
     windSpeed: 1.6,

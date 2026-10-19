@@ -247,6 +247,12 @@ export function getRoadMaterial(theme = 'alpine') {
     roughness: 1.0,
     metalness: p.metalness,
     envMapIntensity: p.envMapIntensity,
+    // The lane markings, grid boxes and start line are coplanar with the
+    // tarmac. Push the road a hair away from the camera so those details win
+    // the depth test instead of z-fighting.
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
   });
   roadMaterials[theme] = mat;
   return mat;

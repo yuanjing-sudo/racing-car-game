@@ -304,6 +304,7 @@ class Game {
     this.updateLoader(10, 'Generating track...');
     const seed = Math.floor(Math.random() * 10000);
     this.trackData = createTrack(settings.track, seed);
+    this.scene.add(this.trackData.group);
     this.playerPhysics.setGroundHeightGetter((x, z) => this.getGroundHeight(x, z));
 
     this.updateLoader(30, 'Creating scenery...');
@@ -375,6 +376,7 @@ class Game {
 
     const seed = Math.floor(Math.random() * 10000);
     this.trackData = createTrack(settings.track || 'countryside', seed);
+    this.scene.add(this.trackData.group);
     this.playerPhysics.setGroundHeightGetter((x, z) => this.getGroundHeight(x, z));
     this.scenery = createScenery(settings.track || 'countryside', seed, this.trackData.curve);
     this.scene.add(this.scenery);

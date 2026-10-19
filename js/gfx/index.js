@@ -157,6 +157,7 @@ export function createGraphicsEngine(opts = {}) {
     speed01: 0,
     elapsed: 0,
     fogScale: 1,
+    volumetricDensity: 0.05,
   };
 
   /* ------------------------------------------------------------------ modules ---- */
@@ -513,7 +514,13 @@ export function createGraphicsEngine(opts = {}) {
     }
     if (modules.volumetrics) {
       const v = { ...(profile.volumetrics || {}) };
-      if (v.density != null) v.density *= state.fogScale;
+      // Theme densities are artistic 0..1 scales. The shader integrates
+      // optical density per metre, where ~0.05 is a light haze. Feeding the
+      // raw 0.5–1.25 values straight in made the air opaque within a few
+      // metres, blacking out the entire lower half of the screen.
+      const base = v.density != null ? v.density : 0.7;
+      state.volumetricDensity = base * 0.05;
+      v.density = state.volumetricDensity * state.fogScale;
       if (v.maxDistance != null) v.maxDistance *= 0.4 + 0.6 * state.fogScale;
       modules.volumetrics.setParams(v);
     }
@@ -648,9 +655,14 @@ export function createGraphicsEngine(opts = {}) {
     }
     modules.shadows && modules.shadows.update(dt, full);
     if (modules.volumetrics) {
-      // fog density scales with the theme
+      // Keep the current theme's base density and only modulate it with the
+      // weather. This used to overwrite it with `fogScale * 0.9 + 0.1` (≈1.0
+      // on a clear day), which is dense enough to hide the car and the road.
       full.wetness = state.wetness;
-      modules.volumetrics.setParams({ density: (state.fogScale) * 0.9 + 0.1, groundY: ctx.groundY != null ? ctx.groundY : 0 });
+      modules.volumetrics.setParams({
+        density: (state.volumetricDensity != null ? state.volumetricDensity : 0.05) * state.fogScale,
+        groundY: ctx.groundY != null ? ctx.groundY : 0,
+      });
       modules.volumetrics.update(dt, full);
     }
     // The camera director runs after the host has placed the camera for the
