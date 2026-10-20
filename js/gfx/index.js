@@ -11,6 +11,8 @@ import { createScreens } from './screens.js';
 import { createRoadDetail } from './roaddetail.js';
 import { createCrew } from './crew.js';
 import { createKerbs } from './kerbs.js';
+import { createTraffic } from './traffic.js';
+import { createCones } from './cones.js';
 import { createDecals } from './decals.js';
 import { createWeatherFx } from './weatherfx.js';
 import { createReflections } from './reflections.js';
@@ -113,6 +115,10 @@ const DEFAULT_SETTINGS = {
   roaddetail: true,
   crew: true,
   kerbs: true,
+  traffic: true,
+  trafficDensity: 1,
+  cones: true,
+  coneDensity: 1,
   skyline: true,
   rural: true,
   wilds: true,
@@ -193,6 +199,8 @@ export function createGraphicsEngine(opts = {}) {
   let roadDetail = null;
   let crew = null;
   let kerbs = null;
+  let traffic = null;
+  let cones = null;
   let skyline = null;
   let rural = null;
   let wilds = null;
@@ -269,6 +277,18 @@ export function createGraphicsEngine(opts = {}) {
       try { kerbs.dispose(); } catch (e) { /* ignore */ }
       kerbs = null;
       modules.kerbs = null;
+    }
+    if (traffic) {
+      if (traffic.group.parent) traffic.group.parent.remove(traffic.group);
+      try { traffic.dispose(); } catch (e) { /* ignore */ }
+      traffic = null;
+      modules.traffic = null;
+    }
+    if (cones) {
+      if (cones.group.parent) cones.group.parent.remove(cones.group);
+      try { cones.dispose(); } catch (e) { /* ignore */ }
+      cones = null;
+      modules.cones = null;
     }
     if (skyline) {
       if (skyline.group.parent) skyline.group.parent.remove(skyline.group);
@@ -401,6 +421,45 @@ export function createGraphicsEngine(opts = {}) {
         return k;
       }, 'kerbs', failures);
       modules.kerbs = kerbs;
+    }
+
+    // Traffic signals and the civilian traffic that ignores them. Urban themes
+    // get signalised crossings and a fleet of slow saloons; everywhere else
+    // gets portable road-works signals on the verge.
+    if (settings.traffic !== false) {
+      traffic = safe(() => {
+        const t = createTraffic({
+          theme: theme.theme,
+          seed: (theme.seed != null ? theme.seed : 42) ^ 0x74a1,
+          curve,
+          width: theme.width || 12,
+          gapZones: theme.gapZones || [],
+          quality: settings.quality,
+          density: settings.trafficDensity != null ? settings.trafficDensity : 1,
+        });
+        if (scene) scene.add(t.group);
+        return t;
+      }, 'traffic', failures);
+      modules.traffic = traffic;
+    }
+
+    // Cones the player has to weave through. They collide with the car and
+    // tip over into a short tumble before popping back upright.
+    if (settings.cones !== false) {
+      cones = safe(() => {
+        const c = createCones({
+          theme: theme.theme,
+          seed: (theme.seed != null ? theme.seed : 42) ^ 0x5ca9,
+          curve,
+          width: theme.width || 12,
+          gapZones: theme.gapZones || [],
+          quality: settings.quality,
+          density: settings.coneDensity != null ? settings.coneDensity : 1,
+        });
+        if (scene) scene.add(c.group);
+        return c;
+      }, 'cones', failures);
+      modules.cones = cones;
     }
 
     // The detailed city beyond the barriers. `skyline.js` is a no-op outside the
@@ -690,6 +749,8 @@ export function createGraphicsEngine(opts = {}) {
     if (roadDetail) roadDetail.update(dt, full);
     if (crew) crew.update(dt, full);
     if (kerbs) kerbs.update(dt, full);
+    if (traffic) traffic.update(dt, full);
+    if (cones) cones.update(dt, full);
     if (skyline) skyline.update(dt, full);
     if (rural) rural.update(dt, full);
     if (wilds) wilds.update(dt, full);
@@ -719,7 +780,7 @@ export function createGraphicsEngine(opts = {}) {
     // Track content lives in the caller's scene, not this engine's: take it back
     // out before releasing its buffers, or a disposed engine leaves a ghost
     // circuit (and a skyline) parented behind it.
-    for (const m of [props, dynamicProps, screens, roadDetail, crew, kerbs, skyline, rural, wilds]) {
+    for (const m of [props, dynamicProps, screens, roadDetail, crew, kerbs, traffic, cones, skyline, rural, wilds]) {
       if (m && m.group && m.group.parent) m.group.parent.remove(m.group);
     }
     if (props) { try { props.dispose(); } catch (e) { /* ignore */ } props = null; }
@@ -728,6 +789,8 @@ export function createGraphicsEngine(opts = {}) {
     if (roadDetail) { try { roadDetail.dispose(); } catch (e) { /* ignore */ } roadDetail = null; }
     if (crew) { try { crew.dispose(); } catch (e) { /* ignore */ } crew = null; }
     if (kerbs) { try { kerbs.dispose(); } catch (e) { /* ignore */ } kerbs = null; }
+    if (traffic) { try { traffic.dispose(); } catch (e) { /* ignore */ } traffic = null; }
+    if (cones) { try { cones.dispose(); } catch (e) { /* ignore */ } cones = null; }
     if (skyline) { try { skyline.dispose(); } catch (e) { /* ignore */ } skyline = null; }
     if (rural) { try { rural.dispose(); } catch (e) { /* ignore */ } rural = null; }
     if (wilds) { try { wilds.dispose(); } catch (e) { /* ignore */ } wilds = null; }
@@ -767,6 +830,8 @@ export function createGraphicsEngine(opts = {}) {
     get roaddetail() { return roadDetail || modules.roaddetail; },
     get crew() { return crew || modules.crew; },
     get kerbs() { return kerbs || modules.kerbs; },
+    get traffic() { return traffic || modules.traffic; },
+    get cones() { return cones || modules.cones; },
     get skyline() { return skyline || modules.skyline; },
     get rural() { return rural || modules.rural; },
     get wilds() { return wilds || modules.wilds; },

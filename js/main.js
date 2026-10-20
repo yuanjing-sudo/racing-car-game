@@ -65,6 +65,9 @@ class Game {
     this.collisionCooldown = 0;
     this.offTrackTimer = 0;
     this.messageTimer = 0;
+    this.coneHits = 0;
+    this.trafficHits = 0;
+    this.hazardCooldown = 0;
 
     this.init();
   }
@@ -360,9 +363,25 @@ class Game {
       });
     }
 
+    this.coneHits = 0;
+    this.trafficHits = 0;
+    this.hazardCooldown = 0;
+    this.refreshAIHazards();
+
     this.updateLoader(85, 'Starting race...');
     this.race.start(settings);
     this.state = 'racing';
+
+    // Nudge the player towards the new street furniture once the countdown is
+    // done, but only if they are still in this race.
+    const streetHint = (settings.track === 'city' || settings.track === 'tokyo')
+      ? 'Ignore the lights — dodge the traffic and cones'
+      : 'Watch for the coned work zones';
+    setTimeout(() => {
+      if (this.gameMode === 'racing' && this.state === 'racing' && this.race.state === 'racing') {
+        this.hud.showMessage(streetHint, 2600);
+      }
+    }, 4200);
 
     this.updateLoader(100, 'GO!');
     this.audio.playEffect('countdown_beep');
@@ -414,6 +433,9 @@ class Game {
 
     this.race.reset();
     this.race.totalLaps = 999;
+    this.coneHits = 0;
+    this.trafficHits = 0;
+    this.hazardCooldown = 0;
     this.state = 'freeroam';
     this.hud.showMessage('Free Roam - Explore the track!', 3000);
   }
@@ -637,6 +659,8 @@ class Game {
       return;
     }
 
+    this.updateHazardContacts(dt);
+
     const speedDiff = Math.abs(result.speed - prevSpeed);
     if (speedDiff > 20) {
       this.cameraController.addShake(0.3);
@@ -678,6 +702,8 @@ class Game {
       this.respawnCar();
       return;
     }
+
+    this.updateHazardContacts(dt);
 
     this.updatePlayerVisuals(dt, result);
     this.updateCamera(dt, result);
@@ -912,6 +938,144 @@ class Game {
   updateAI(dt) {
     if (this.aiDirector) {
       this.aiDirector.update(dt, this.playerPhysics.position, this.playerPhysics.speed);
+      this.updateAIHazardContacts();
+    }
+  }
+
+  /**
+   * Give the AI the same hazard list the player faces: the work-zone cones and
+   * the civilian cars. `ai.js` uses the record positions every frame, so the
+   * array only has to be rebuilt when the track content is rebuilt.
+   */
+  refreshAIHazards() {
+    if (!this.aiDirector) return;
+    const hazards = [];
+    if (this.gfx && this.gfx.cones) {
+      const list = this.gfx.cones.getHazards();
+      if (list) for (let i = 0; i < list.length; i++) hazards.push(list[i]);
+    }
+    if (this.gfx && this.gfx.traffic) {
+      const list = this.gfx.traffic.getHazards();
+      if (list) for (let i = 0; i < list.length; i++) hazards.push(list[i]);
+    }
+    this.aiDirector.setHazards(hazards);
+  }
+
+  /**
+   * Contact resolution for the player against cones and civilian traffic.
+   * Both apply a damage/loss hit and a small race-time penalty, so the clean
+   * line is always the faster line.
+   */
+  updateHazardContacts(dt) {
+    if (this.hazardCooldown > 0) this.hazardCooldown = Math.max(0, this.hazardCooldown - dt);
+    if (this.hazardCooldown > 0) return;
+
+    const cones = this.gfx && this.gfx.cones;
+    if (cones) {
+      const hit = cones.collide(
+        this.playerPhysics.position,
+        1.0,
+        this.playerPhysics.velocity,
+        this.playerPhysics.heading
+      );
+      if (hit) { this.onConeHit(hit); return; }
+    }
+
+    const traffic = this.gfx && this.gfx.traffic;
+    if (traffic) {
+      const hit = traffic.collide(this.playerPhysics.position, 1.0, false);
+      if (hit) this.onTrafficCollision(hit);
+    }
+  }
+
+  onConeHit(cone) {
+    this.hazardCooldown = 0.5;
+    this.coneHits++;
+    this.playerPhysics.velocity.multiplyScalar(0.9);
+    this.playerPhysics.applyDamage(0.015);
+    this.cameraController.addShake(0.35);
+    this.audio.playEffect('collision', 0.35);
+    if (this.gfx && this.gfx.cinematic) this.gfx.cinematic.impact(5);
+    this.applyPenalty(0.4, 'CONE');
+    if (this.particles) {
+      this.particles.emitSparks(
+        new THREE.Vector3(cone.position.x, cone.position.y + 0.35, cone.position.z),
+        new THREE.Vector3(0, 1, 0),
+        5
+      );
+    }
+  }
+
+  onTrafficCollision(car) {
+    this.hazardCooldown = 0.6;
+    this.trafficHits++;
+    const dx = this.playerPhysics.position.x - car.position.x;
+    const dz = this.playerPhysics.position.z - car.position.z;
+    const len = Math.hypot(dx, dz) || 1;
+    this.playerPhysics.position.x += (dx / len) * 0.35;
+    this.playerPhysics.position.z += (dz / len) * 0.35;
+    this.playerPhysics.velocity.multiplyScalar(0.45);
+    this.playerPhysics.applyDamage(0.06);
+    this.cameraController.addShake(0.9);
+    this.audio.playEffect('collision', 0.8);
+    if (this.gfx && this.gfx.cinematic) this.gfx.cinematic.impact(12);
+    this.applyPenalty(1.5, 'TRAFFIC');
+    if (this.particles) {
+      this.particles.emitSparks(
+        new THREE.Vector3(car.position.x, car.position.y + 0.6, car.position.z),
+        new THREE.Vector3(0, 1, 0),
+        8
+      );
+    }
+  }
+
+  updateAIHazardContacts() {
+    if (!this.aiDirector) return;
+    const cones = this.gfx && this.gfx.cones;
+    const traffic = this.gfx && this.gfx.traffic;
+    if (!cones && !traffic) return;
+
+    for (const opp of this.aiDirector.opponents) {
+      if (opp.isFinished) continue;
+      const pos = opp.physics.position;
+      if (traffic) {
+        const hit = traffic.collide(pos, 1.0, true);
+        if (hit) {
+          opp.physics.velocity.multiplyScalar(0.62);
+          opp.physics.applyDamage(0.03);
+          opp.mistakesCount++;
+        }
+      }
+      if (cones) {
+        const hit = cones.collide(pos, 0.9, opp.physics.velocity, opp.physics.heading);
+        if (hit) {
+          opp.physics.velocity.multiplyScalar(0.94);
+          opp.physics.applyDamage(0.004);
+          opp.mistakesCount++;
+        }
+      }
+    }
+
+    // Civilian traffic knocks cones aside as it trundles along.
+    if (traffic && cones) {
+      const civics = traffic.getHazards();
+      for (let i = 0; i < civics.length; i++) {
+        cones.collide(civics[i].position, 0.9, null, civics[i].angle);
+      }
+    }
+  }
+
+  /**
+   * Add `seconds` to the live race clock and tell the player why. Only applies
+   * while a race is actually running; free roam simply gets the notification.
+   */
+  applyPenalty(seconds, label) {
+    if (this.race && this.race.state === 'racing') {
+      this.race.raceTime += seconds;
+      this.race.lapStartTime += seconds;
+    }
+    if (this.hud) {
+      this.hud.showNotification(`${label} +${seconds.toFixed(1)}s`, 'warning', 1200);
     }
   }
 

@@ -56,6 +56,7 @@ export class AIDirector {
     this.skillLevel = AI_SKILL_LEVELS[diff];
     this.racePositions = [];
     this.overtakeCooldowns = new Map();
+    this.hazards = [];
 
     this.initOpponents();
   }
@@ -238,7 +239,39 @@ export class AIDirector {
       avoidanceSteer = clamp(avoidanceSteer * 3, -0.5, 0.5);
     }
 
-    const combinedSteer = clamp(steerInput + avoidanceSteer * (1 - opponent.skill.aggression), -1, 1);
+    // Obstacle repulsion: cones and moving civilian traffic are hazards the AI
+    // has to go around. The hazard's lateral offset relative to the car picks
+    // the side to steer towards; one dead ahead also scrubs speed.
+    let hazardSteer = 0;
+    let hazardBrake = 0;
+    const fwdX = Math.sin(heading);
+    const fwdZ = Math.cos(heading);
+    const rightX = Math.cos(heading);
+    const rightZ = -Math.sin(heading);
+    for (let hi = 0; hi < this.hazards.length; hi++) {
+      const h = this.hazards[hi];
+      if (!h || h.active === false) continue;
+      const hp = h.position || h.pos;
+      if (!hp) continue;
+      const dxh = hp.x - pos.x;
+      const dzh = hp.z - pos.z;
+      const ahead = dxh * fwdX + dzh * fwdZ;
+      if (ahead < 1 || ahead > 30) continue;
+      const lateral = dxh * rightX + dzh * rightZ;
+      const clear = (h.radius != null ? h.radius : 1.0) + 2.1;
+      if (Math.abs(lateral) > clear) continue;
+      const strength = (1 - ahead / 30) * 0.7;
+      hazardSteer += (lateral >= 0 ? -1 : 1) * strength;
+      if (ahead < 13 && Math.abs(lateral) < clear * 0.8) {
+        hazardBrake = Math.max(hazardBrake, 0.4);
+      }
+    }
+
+    const combinedSteer = clamp(
+      steerInput + avoidanceSteer * (1 - opponent.skill.aggression) + hazardSteer,
+      -1,
+      1
+    );
 
     const speedDiff = targetSpeed / 3.6 - phys.forwardSpeed;
     let throttleInput = 0;
@@ -250,6 +283,11 @@ export class AIDirector {
       brakeInput = clamp(-speedDiff * 0.3, 0, 1) * opponent.skill.brakingSkill;
     } else {
       throttleInput = 0.2;
+    }
+
+    if (hazardBrake > 0) {
+      brakeInput = Math.max(brakeInput, hazardBrake * (1.2 - opponent.skill.aggression * 0.5));
+      throttleInput = 0;
     }
 
     // If the line ahead is badly off-axis, scrub speed to gather it up.
@@ -487,6 +525,15 @@ export class AIDirector {
     const idx = this.racePositions.findIndex(o => o.racePosition === currentPos);
     if (idx > 0) return this.racePositions[idx - 1];
     return null;
+  }
+
+  /**
+   * Install the world's hazard records (cones, civilian cars). Positions are
+   * read live every frame, so this only needs to be called when the track or
+   * its content is rebuilt.
+   */
+  setHazards(list) {
+    this.hazards = Array.isArray(list) ? list : [];
   }
 
   getStandings() {

@@ -49,6 +49,8 @@ js/gfx/
   roaddetail.js       asphalt wear: patches, tar snakes, seams, drains, marbles
   crew.js             marshals, camera operators, photographers
   kerbs.js            raised bevelled apex kerbs
+  traffic.js          signalised crossings + civilian traffic
+  cones.js            collidable work-zone cones
   skyline.js          city skyline: towers, podiums, signs, beacons (city, tokyo)
   rural.js            farmland, hedgerows, farmsteads, leaves (countryside, forest)
   wilds.js            rock and snow, mesas and saguaro, coast and lighthouse
