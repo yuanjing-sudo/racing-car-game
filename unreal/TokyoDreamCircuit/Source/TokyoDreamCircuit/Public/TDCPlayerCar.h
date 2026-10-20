@@ -7,6 +7,7 @@
 class UStaticMeshComponent;
 class UTDCChaseCameraComponent;
 class UTDCEngineAudioComponent;
+class UTDCPhotoModeComponent;
 
 /**
  * ATDCPlayerCar
@@ -56,6 +57,10 @@ public:
 	/** Engine, tyre and wind audio, synthesised at runtime. No audio assets. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Car")
 	TObjectPtr<UTDCEngineAudioComponent> EngineAudio;
+
+	/** Photo Mode: free camera, frozen world, physical lens. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Car")
+	TObjectPtr<UTDCPhotoModeComponent> PhotoMode;
 
 	// ---------------------------------------------------------------------
 	// Handling
@@ -183,21 +188,89 @@ public:
 	bool bPhysicsEnabled = true;
 
 	// ---------------------------------------------------------------------
+	// Arcade aids: drift assist, Zen state, scoring
+	// ---------------------------------------------------------------------
+
+	/** Forgiving drift. When the car is sideways, a small yaw torque nudges the
+	 *  body toward its velocity, which is the same thing a good driver does with
+	 *  opposite lock. It fades in above DriftAssistMinSpeedKmh and grows with
+	 *  slip angle, and is almost fully suppressed while the handbrake is held so
+	 *  a drift can still be started. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Car|Arcade")
+	bool bDriftAssist = true;
+
+	/** 0 = off, 1 = strong. 0.65 recovers a slide at 300 km/h without feeling
+	 *  like the car is on rails. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Car|Arcade", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float DriftAssistStrength = 0.65f;
+
+	/** Ceiling on the assist torque, in kg*cm^2/s^2. The default is a few
+	 *  hundred N*m, enough to rotate a 1.45 t car at a couple of rad/s^2. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Car|Arcade", meta = (ClampMin = "0.0"))
+	float DriftAssistMaxTorque = 6.0e7f;
+
+	/** Below this speed the assist stays off, so parking and slow corners are
+	 *  untouched. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Car|Arcade", meta = (ClampMin = "0.0"))
+	float DriftAssistMinSpeedKmh = 40.0f;
+
+	/** Speed at which "Zen" starts: the HUD begins to fade. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Car|Arcade", meta = (ClampMin = "0.0"))
+	float ZenStartKmh = 250.0f;
+
+	/** Speed at which Zen is fully engaged and the HUD is nearly gone. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Car|Arcade", meta = (ClampMin = "0.0"))
+	float ZenFullKmh = 315.0f;
+
+	/** Current drift angle, unsigned, in degrees. */
+	UFUNCTION(BlueprintPure, Category = "Car|Telemetry")
+	float GetDriftAngleDeg() const { return FMath::RadiansToDegrees(FMath::Abs(RearSlipAngle)); }
+
+	/** 0..1 Zen blend, from ZenStartKmh to ZenFullKmh. Drives HUD fade, wind
+	 *  audio, vignette and the photo-mode hint. */
+	UFUNCTION(BlueprintPure, Category = "Car|Telemetry")
+	float GetZenAlpha() const { return ZenAlpha; }
+
+	UFUNCTION(BlueprintPure, Category = "Car|Telemetry")
+	bool IsZenMode() const { return ZenAlpha > 0.5f; }
+
+	/** Total drift score for this run. Banks while sliding, never resets. */
+	UFUNCTION(BlueprintPure, Category = "Car|Telemetry")
+	float GetRunScore() const { return RunScore; }
+
+	UFUNCTION(BlueprintPure, Category = "Car|Telemetry")
+	float GetBestDriftScore() const { return BestDriftScore; }
+
+	/** Current drift chain multiplier (1..8). Resets shortly after the car
+	 *  regains grip, so linking corners pays. */
+	UFUNCTION(BlueprintPure, Category = "Car|Telemetry")
+	int32 GetDriftChain() const { return FMath::RoundToInt(DriftChain); }
+
+	/** 0..1 how long the current chain has left before it lapses. */
+	UFUNCTION(BlueprintPure, Category = "Car|Telemetry")
+	float GetDriftChainAlpha() const { return FMath::Clamp(DriftTimer / DriftChainWindow, 0.0f, 1.0f); }
+
+	/** Pause or resume the synthesised engine/tyre/wind audio. Photo mode uses
+	 *  this so a frozen frame is also silent. */
+	UFUNCTION(BlueprintCallable, Category = "Car|Audio")
+	void SetAudioEnabled(bool bEnabled);
+
+	// ---------------------------------------------------------------------
 	// Drivetrain, for audio and telemetry
 	// ---------------------------------------------------------------------
 
 	/** Forward gears available to the drivetrain model that drives the engine
 	 *  audio. It is not a real gearbox: no clutch, no shift time. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Car|Drivetrain", meta = (ClampMin = "1", ClampMax = "8"))
-	int32 GearCount = 6;
+	int32 GearCount = 7;
 
 	/** Engine speed at which the audio model shifts up, in rpm. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Car|Drivetrain", meta = (ClampMin = "1000.0"))
-	float ShiftUpRpm = 7200.0f;
+	float ShiftUpRpm = 8200.0f;
 
 	/** Engine speed at which the audio model shifts down, in rpm. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Car|Drivetrain", meta = (ClampMin = "500.0"))
-	float ShiftDownRpm = 3200.0f;
+	float ShiftDownRpm = 3600.0f;
 
 	// ---------------------------------------------------------------------
 	// Telemetry. Bind these to the HUD, audio and post FX.
@@ -280,6 +353,12 @@ private:
 	/** Step the lightweight drivetrain model that drives engine audio. */
 	void UpdateDrivetrain(float ForwardSpeedMs, float LateralSpeedMs, float Speed01, float DeltaSeconds);
 
+	/** Zen blend, drift chain and run score. Called once per physics tick. */
+	void UpdateArcadeState(float SpeedKmh, float DriftAngleDeg, float DeltaSeconds);
+
+	/** Yaw torque that helps a slide come back, applied with the arcade model. */
+	void ApplyDriftAssist(float SpeedMs, float DriftAngleDeg);
+
 	// Inputs, all 0..1 unless noted.
 	float ThrottleInput = 0.0f;
 	float SteeringInput = 0.0f; // -1..1
@@ -295,6 +374,23 @@ private:
 	float EngineRpm = 900.0f;
 	int32 CurrentGear = 1;
 	float TyreSlip01 = 0.0f;
+
+	// Arcade state.
+	float ZenAlpha = 0.0f;
+	float RunScore = 0.0f;
+	float BestDriftScore = 0.0f;
+	float DriftChain = 0.0f;
+	float DriftTimer = 0.0f;
+	float DriftLinkTime = 0.0f;
+
+	/** How long a drift chain survives after the tyres grip again, in seconds. */
+	static constexpr float DriftChainWindow = 1.6f;
+
+	/** Score per second at 100 km/h on a 20 degree slide. */
+	static constexpr float DriftScoreRate = 9.0f;
+
+	/** How far the chain can climb. */
+	static constexpr float MaxDriftChain = 8.0f;
 
 	/** Ratios the drivetrain model steps through. Fourth is near 1:1. */
 	static constexpr int32 MaxGears = 8;

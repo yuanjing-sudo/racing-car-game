@@ -2,6 +2,7 @@
 
 #include "TDCChaseCameraComponent.h"
 #include "TDCEngineAudioComponent.h"
+#include "TDCPhotoModeComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/InputComponent.h"
 #include "Engine/StaticMesh.h"
@@ -101,6 +102,10 @@ ATDCPlayerCar::ATDCPlayerCar()
 	// the component finds its owner in BeginPlay and reads the telemetry above.
 	EngineAudio = CreateDefaultSubobject<UTDCEngineAudioComponent>(TEXT("EngineAudio"));
 	EngineAudio->SetupAttachment(Body);
+
+	// Photo Mode lives on the car so it survives the car being unpossessed while
+	// the photographer flies the free camera.
+	PhotoMode = CreateDefaultSubobject<UTDCPhotoModeComponent>(TEXT("PhotoMode"));
 }
 
 void ATDCPlayerCar::BeginPlay()
@@ -128,6 +133,11 @@ void ATDCPlayerCar::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 	PlayerInputComponent->BindAxis(TEXT("Brake"), this, &ATDCPlayerCar::SetBrake);
 	PlayerInputComponent->BindAction(TEXT("Handbrake"), IE_Pressed, this, &ATDCPlayerCar::HBDown);
 	PlayerInputComponent->BindAction(TEXT("Handbrake"), IE_Released, this, &ATDCPlayerCar::HBUp);
+
+	if (PhotoMode)
+	{
+		PhotoMode->BindInput(PlayerInputComponent);
+	}
 }
 
 void ATDCPlayerCar::SetThrottle(float Value)
@@ -349,6 +359,11 @@ void ATDCPlayerCar::Tick(float DeltaSeconds)
 		ApplyForceAtLocationSI(-Up * Downforce, Body->GetComponentLocation(), DeltaSeconds);
 	}
 
+	// ---- Arcade aids: drift assist, Zen blend, score ---------------------
+	const float DriftAngleDeg = FMath::RadiansToDegrees(FMath::Abs(AlphaRear));
+	UpdateArcadeState(SpeedKmh, DriftAngleDeg, DeltaSeconds);
+	ApplyDriftAssist(Speed, DriftAngleDeg);
+
 	UpdateDrivetrain(VLong, VLat, SpeedFraction, DeltaSeconds);
 	UpdateWheelVisuals(DeltaSeconds, VLong);
 }
@@ -383,7 +398,7 @@ void ATDCPlayerCar::UpdateDrivetrain(float ForwardSpeedMs, float LateralSpeedMs,
 	TargetRpm = WheelRevolutionsPerSecond * 60.0f * Ratio * FinalDrive;
 
 	// Below walking pace, sit at idle rather than at ~0 rpm.
-	EngineRpm = FMath::FInterpTo(EngineRpm, FMath::Clamp(TargetRpm, 850.0f, 8000.0f), DeltaSeconds, 12.0f);
+	EngineRpm = FMath::FInterpTo(EngineRpm, FMath::Clamp(TargetRpm, 850.0f, 9500.0f), DeltaSeconds, 12.0f);
 
 	// 0..1 how hard the tyres are sliding, combining a slip-angle term with a
 	// wheelspin term, so a slow, hugely sideways car reads as sliding as much as a
@@ -394,6 +409,107 @@ void ATDCPlayerCar::UpdateDrivetrain(float ForwardSpeedMs, float LateralSpeedMs,
 		FMath::Abs(ForwardSpeedMs) * (1.0f - Speed01 * 0.7f) / 18.0f, 0.0f, 1.0f) * FMath::Max(0.0f, ThrottleInput);
 
 	TyreSlip01 = FMath::Clamp(FMath::Max(SlipAngleTerm * SlipSpeedTerm, WheelspinTerm), 0.0f, 1.0f);
+}
+
+void ATDCPlayerCar::UpdateArcadeState(float SpeedKmh, float DriftAngleDeg, float DeltaSeconds)
+{
+	// Zen: a smooth blend from ZenStartKmh to ZenFullKmh. The HUD, the wind
+	// audio and the vignette all read this one number, so they engage together.
+	const float Span = FMath::Max(1.0f, ZenFullKmh - ZenStartKmh);
+	const float Raw = FMath::Clamp((SpeedKmh - ZenStartKmh) / Span, 0.0f, 1.0f);
+	ZenAlpha = FMath::SmoothStep(0.0f, 1.0f, Raw);
+
+	// A drift is a real slide at speed: the handbrake alone does not score,
+	// because holding it in a straight line is not a drift.
+	const bool bSliding = DriftAngleDeg > 8.0f && SpeedKmh > 60.0f && !bHandbrake;
+	if (bSliding)
+	{
+		DriftTimer = DriftChainWindow;
+		DriftLinkTime += DeltaSeconds;
+		const float ChainTarget = FMath::Clamp(1.0f + FMath::FloorToFloat(DriftLinkTime / 0.9f), 1.0f, MaxDriftChain);
+		DriftChain = FMath::Max(DriftChain, ChainTarget);
+		const float Gain = DriftScoreRate * DriftChain
+			* FMath::Clamp(DriftAngleDeg / 20.0f, 0.0f, 3.0f)
+			* FMath::Clamp(SpeedKmh / 100.0f, 0.0f, 3.0f)
+			* DeltaSeconds;
+		RunScore += Gain;
+		BestDriftScore = FMath::Max(BestDriftScore, RunScore);
+	}
+	else if (DriftTimer > 0.0f)
+	{
+		// The chain survives a short straight, so a flick between two corners
+		// links instead of resetting. It drains at 2.5x real time.
+		DriftTimer = FMath::Max(0.0f, DriftTimer - DeltaSeconds * 2.5f);
+		if (DriftTimer <= 0.0f)
+		{
+			DriftChain = 0.0f;
+			DriftLinkTime = 0.0f;
+		}
+	}
+}
+
+void ATDCPlayerCar::ApplyDriftAssist(float SpeedMs, float DriftAngleDeg)
+{
+	if (!bDriftAssist || !Body || DriftAssistStrength <= 0.0f)
+	{
+		return;
+	}
+
+	const float SpeedKmh = SpeedMs * 3.6f;
+	if (SpeedKmh < DriftAssistMinSpeedKmh || DriftAngleDeg < 5.0f)
+	{
+		return;
+	}
+
+	const FVector Velocity = Body->GetPhysicsLinearVelocity();
+	if (Velocity.SizeSquared2D() < 25.0f)
+	{
+		return;
+	}
+
+	const FVector VelDir = FVector(Velocity.X, Velocity.Y, 0.0f).GetSafeNormal();
+	const FVector Fwd = GetActorForwardVector();
+	const FVector FwdDir = FVector(Fwd.X, Fwd.Y, 0.0f).GetSafeNormal();
+	if (VelDir.IsNearlyZero() || FwdDir.IsNearlyZero())
+	{
+		return;
+	}
+
+	// Positive when the velocity is counter-clockwise of the body, i.e. when a
+	// positive yaw torque would rotate the body back toward its velocity.
+	const float VelYaw = FMath::Atan2(VelDir.Y, VelDir.X);
+	const float BodyYaw = FMath::Atan2(FwdDir.Y, FwdDir.X);
+	const float YawError = FMath::FindDeltaAngleRadians(BodyYaw, VelYaw);
+
+	// Fade in with slip and speed. Suppress most of it while the handbrake is
+	// held: the assist is there to save a slide, not to prevent one.
+	const float SlipGain = FMath::Clamp((DriftAngleDeg - 5.0f) / 25.0f, 0.0f, 1.0f);
+	const float SpeedGain = FMath::Clamp(SpeedKmh / 120.0f, 0.0f, 1.0f);
+	const float Initiation = bHandbrake ? 0.15f : 1.0f;
+	const float Gain = DriftAssistStrength * Initiation * SlipGain * SpeedGain * 5.0e7f;
+	const float Torque = FMath::Clamp(YawError * Gain, -DriftAssistMaxTorque, DriftAssistMaxTorque);
+
+	if (FMath::Abs(Torque) > 1.0f)
+	{
+		Body->AddTorqueInRadians(GetActorUpVector() * Torque, NAME_None, true);
+	}
+}
+
+void ATDCPlayerCar::SetAudioEnabled(bool bEnabled)
+{
+	if (!EngineAudio)
+	{
+		return;
+	}
+
+	if (bEnabled)
+	{
+		EngineAudio->Start();
+	}
+	else
+	{
+		EngineAudio->Stop();
+	}
 }
 
 void ATDCPlayerCar::UpdateWheelVisuals(float DeltaTime, float ForwardSpeedMs)
