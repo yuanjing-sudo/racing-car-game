@@ -16,9 +16,9 @@ extends Node3D
 ##                tyres, which is the whole visual point of a wet track
 ##   brake lights brake_input, brightened only while braking
 ##
-## Skid marks are deliberately not here. They need either a decal or a ribbon
-## mesh with its own ring buffer, which is a bigger piece of work than the rest of
-## this file put together; see REALISM_GODOT.md for what that would take.
+## Skid marks are not here: they are their own node, TDCSkidMarks, because a
+## pool of instances that persists for a whole lap does not belong in a file
+## about particles that live for a second or two.
 
 @export_group("Source")
 

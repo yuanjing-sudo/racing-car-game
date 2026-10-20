@@ -52,6 +52,7 @@ scripts/
   tdc_materials.gd               material creation
   tdc_engine_audio.gd            engine, tyre and wind sound, synthesised
   tdc_vehicle_fx.gd              tyre smoke, wet spray, brake lights
+  tdc_skid_marks.gd              pooled skid marks from rear slip
 ```
 
 ## Sound and visual effects
@@ -89,6 +90,19 @@ real.
 The particle texture is a `GradientTexture2D` with a radial fill, generated at
 startup. Without it, a particle is a hard-edged square; that gradient is the
 difference between smoke and confetti.
+
+**`tdc_skid_marks.gd`** is a separate node because it has a different lifetime:
+smoke lives for a second, rubber lives for a lap. It is a `MultiMeshInstance3D` with
+a fixed pool of 800 unit cubes, each stretched between two successive rear contact
+patches every 0.55 m of sliding, so a drift leaves two continuous lines and the
+whole trail is one draw call. The pool covers about 440 m and then overwrites oldest
+first. A custom AABB large enough for the circuit stops the marks being culled as
+the pool is written.
+
+Its triggers are `rear_slip_angle` above 9° or `tyre_slip_01` above 0.32, above
+40 km/h: the first catches a handbrake slide, the second catches wheelspin on a
+straight where the slip angle is nearly zero. Marks narrow as `wetness` rises,
+because rubber on standing water is thinner and greyer.
 
 ## Why there is no InputMap
 
@@ -230,10 +244,10 @@ your specific 4.x point release.
 - The tyre model is a single-track approximation: two slip angles, two cornering
   forces, clamped by a friction circle from weight plus downforce. No suspension,
   no load transfer, no tyre temperature. Same model as the other two ports.
-- **No skid marks.** Godot has no runtime-decal primitive, so skid marks need
-  either a `Decal` node with a texture you author, or a ribbon mesh with its own
-  ring buffer. That is a bigger job than the rest of `tdc_vehicle_fx.gd`
-  combined; [REALISM_GODOT.md](REALISM_GODOT.md) describes what it would take.
+- **Skid marks are flat boxes, not decals.** `tdc_skid_marks.gd` stretches pooled
+  instances over the road; they cannot wrap a crest the way an authored `Decal`
+  would, and the oldest marks disappear once the pool wraps. On a wet track they
+  narrow rather than smear, which is the right direction but not a water simulation.
 - **No Nanite equivalent**, and none is coming. See
   [REALISM_GODOT.md](REALISM_GODOT.md).
 - No terrain, no city, no traffic, no lap timing.

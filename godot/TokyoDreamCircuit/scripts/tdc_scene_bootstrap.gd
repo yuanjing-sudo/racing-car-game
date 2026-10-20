@@ -78,6 +78,10 @@ extends Node3D
 
 @export var fx_enabled: bool = true
 
+## Build the pooled skid marks. Independent of fx_enabled, so the rubber can stay
+## while the smoke is off.
+@export var skid_marks_enabled: bool = true
+
 ## The road this bootstrap created.
 var road: TDCProceduralRoad
 
@@ -93,6 +97,9 @@ var engine_audio: TDCEngineAudio
 ## The particles and lights this bootstrap created.
 var vehicle_fx: TDCVehicleFX
 
+## The pooled skid marks this bootstrap created.
+var skid_marks: TDCSkidMarks
+
 
 func _ready() -> void:
 	_assert_gravity()
@@ -106,6 +113,7 @@ func _ready() -> void:
 	_build_camera()
 	_build_audio()
 	_build_fx()
+	_build_skid_marks()
 
 
 ## Tear the whole scene down and build it again. Handy while tuning numbers: call
@@ -119,6 +127,7 @@ func rebuild() -> void:
 	camera = null
 	engine_audio = null
 	vehicle_fx = null
+	skid_marks = null
 
 	# queue_free defers to the end of the frame, so the new nodes would collide by
 	# name with the old ones. Rename them out of the way first.
@@ -318,3 +327,14 @@ func _build_fx() -> void:
 	vehicle_fx.wetness = wetness
 
 	add_child(vehicle_fx)
+
+
+func _build_skid_marks() -> void:
+	if not skid_marks_enabled:
+		return
+
+	skid_marks = TDCSkidMarks.new()
+	skid_marks.name = "TDC Skid Marks"
+	skid_marks.car = car
+
+	add_child(skid_marks)

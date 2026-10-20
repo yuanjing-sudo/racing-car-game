@@ -64,41 +64,45 @@ converges over about a second as you drive and it cannot resolve small emissive
 detail the way Lumen's screen tracing can. What it does do is bounce a neon bank
 sign's colour onto the road at 300 km/h, which is the effect being chased here.
 
+## Implemented: skid marks
+
+The item that used to be first on this list is now `tdc_skid_marks.gd`, and it is
+the ribbon design described below. A `MultiMeshInstance3D` holds a fixed pool of
+800 unit cubes; each is stretched between two successive rear contact patches
+every 0.55 m of sliding, so a drift leaves two continuous lines and the whole
+trail is one draw call. The pool covers about 440 m and then overwrites oldest
+first. A custom AABB large enough for the circuit keeps the marks from being
+culled while the camera looks away from the origin.
+
+What it is not: a `Decal`. The boxes lie flat between their two contact points, so
+they cannot wrap a crest, and the oldest marks disappear when the pool wraps.
+There is no fade; rubber does not fade, so the oldest is simply overwritten.
+
 ## What is not there yet
 
 Ordered by how much each would add, not by how hard it is.
 
-### 1. Skid marks
-
-The largest missing piece, and the one with no cheap answer. Godot has a `Decal`
-node, but a decal needs a texture you author, and a long drift needs a ribbon
-rather than a stamp. The route that needs no texture: keep a `MeshInstance3D`
-with a ring buffer of quads whose strip is emitted at each rear contact patch
-while `tyre_slip_01` is high, fading the oldest end by writing vertex colours into
-an `ArrayMesh` you re-upload each frame. That is roughly 150 lines and it is the
-same design the Unreal and Unity ports would need.
-
-### 2. Real geometry
+### 1. Real geometry
 
 The road is a swept prism and the car is a box. A bevel on the road edge, a
 kerb, and armco with posts would do more for believability than any post effect.
 All three are `SurfaceTool` sweeps, and the road already demonstrates the pattern.
 
-### 3. Scenery
+### 2. Scenery
 
 `_build_ground` makes one dark plane. A procedural city — extruded rectangles on
 a parallax grid, plus a few landmark silhouettes — would give SDFGI and SSR
 something to reflect and turn the fog from a grey wall into depth. This is the
 biggest visual gap in all three ports.
 
-### 4. Audio beyond the engine
+### 3. Audio beyond the engine
 
 `tdc_engine_audio.gd` synthesises the car. There is no tyre contact patch noise,
 no gravel, no rain on the roof, no city ambience, no doppler on the roadside
 objects you pass. The synthesiser already has a noise source and a filter, so
 most of these are additions to `_next_sample` rather than new files.
 
-### 5. Other post effects
+### 4. Other post effects
 
 Godot's environment has what the port needs, but the web version in
 `js/gfx/` has a wider set (motion blur, depth of field, chromatic aberration,
