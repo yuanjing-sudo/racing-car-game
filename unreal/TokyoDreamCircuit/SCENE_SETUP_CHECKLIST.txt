@@ -1,7 +1,15 @@
 1. Create Content/Maps/TokyoNightRun.
-2. Add TDCProceduralRoad at origin.
+2. Add TDCProceduralRoad at origin and press Build Default Circuit.
 3. Add TDCPlayerCar above the road.
-4. Add Directional Light, Sky Atmosphere, Sky Light, Exponential Height Fog and Post Process Volume.
-5. Assign wet asphalt material.
-6. Add lane markings, guardrails, overhead signs, Tokyo skyline, tower, Fuji and sakura assets.
-7. Replace placeholder rigid body with Chaos Vehicles for authentic suspension and tire physics.
+4. Press Play. The game mode spawns ATDCGoldenHour (sun, sky, fog, grade),
+   ATDCWorldLandmarks (Tokyo Tower, Skytree, Fuji, Rainbow Bridge, torii,
+   220-tower skyline) and ATDCWeatherSystem (rain, wheel spray, wet grip).
+   To place them by hand instead, drop the three actors in and uncheck
+   bSpawnNeonHorizonWorld on the game mode.
+5. Optional, biggest win: assign a wet asphalt material to the road and expose
+   the scalars Wetness, RainIntensity and PuddleMask. The weather system writes
+   them every second. Without it the scene still works.
+6. Optional: import Nanite city/tower/Fuji meshes and a real hypercar to replace
+   the procedural stand-ins. See NEON_HORIZON.md for what is deliberately absent.
+7. Optional: replace the placeholder rigid body with Chaos Vehicles for
+   suspension and tyre physics.

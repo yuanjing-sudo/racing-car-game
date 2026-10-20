@@ -31,6 +31,19 @@ No extra download — these ship with UE5 and are switched on in
 | **Motion Blur** | The speed sensation. Tuned via `r.MotionBlur.Amount`. |
 | **Sky Atmosphere** | Physically correct sky, aerial perspective, sun angle. |
 
+## What the code already builds
+
+The procedural layer is a deliberate floor, not a claim of photorealism. Without
+importing anything, the project now generates a golden-hour sun and sky, height
+fog, a filmic grade, Tokyo Tower, Skytree, Mount Fuji with a snow cap, Rainbow
+Bridge, a ring of torii, a 220-tower skyline with lit floor bands and neon, rain
+streaks, wheel spray and a wet-grip blend. It lives in five source files and is
+described in `NEON_HORIZON.md`.
+
+What it cannot do is the thing this document is about: no procedural mesh here is
+Nanite, and no material here is a real wet-asphalt shader. The upgrade path is
+still an asset download, not more code.
+
 ## Required hardware
 
 Lumen with hardware ray tracing and Nanite realistically wants:
