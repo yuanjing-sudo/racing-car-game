@@ -107,20 +107,24 @@ the three projects**, so nothing has to be licensed, downloaded or imported:
 | --- | --- | --- | --- |
 | Audio hook | `USynthComponent::OnGenerateAudio` | `MonoBehaviour.OnAudioFilterRead` | `AudioStreamGenerator.push_buffer` |
 | Engine note | harmonic stack at the rpm-derived firing frequency | same | same |
-| Gear shifts | 6-speed model, up at 7200 rpm | same | same |
+| Gear shifts | 7-speed model, up at 8200 rpm | 6-speed, up at 7200 rpm | 6-speed, up at 7200 rpm |
 | Tyre scrub | driven by measured slip | same | same |
 | Wind roar | amplitude ∝ speed² | same | same |
+| Rain bed | synthesised noise, level follows rain × speed | not included | not included |
+| Skid marks | pool of instanced cubes from rear slip | dynamic mesh ring buffer | `MultiMesh` ring buffer |
 | Tyre smoke | Niagara needs assets, so not included — see the note below | `ParticleSystem` built in code | `CPUParticles3D` built in code |
-| Spray / brake lights | brake lights via emissive material | both | both |
+| Spray / brake lights | instanced spray; brake lights via emissive material | both | both |
 
 The engine note is the part worth having: each car runs a small gearbox model, so the
 rpm climbs to 7200, drops on the upshift and climbs again, and the audio follows it.
 That drop on the shift is most of what makes synthesised engine audio read as real.
 
-> Unreal is the one exception on particles: Niagara effects are assets, and a
-> synthesised-from-nothing particle system there would mean hand-authoring a system
-> in the editor. The Unreal port gets the audio and brake lights; `REALISM.md` says
-> what the smoke would take.
+> Unreal's particles are engine primitives rather than Niagara: rain streaks and
+> wheel spray are pools of instanced cubes, and the skid marks are a second pool, so
+> nothing has to be authored in the editor. Tyre smoke is the one effect still
+> missing there, because soft puffs need either Niagara or a material with an alpha
+> texture. Unity and Godot have no rain at all yet — they get the wet spray, which
+> is the part you actually see from the chase camera.
 
 ## Advanced graphics engine
 
