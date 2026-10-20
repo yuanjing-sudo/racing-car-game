@@ -7,6 +7,7 @@
 #include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "TDCRainAudioComponent.h"
 #include "TDCPlayerCar.h"
 #include "TDCProceduralRoad.h"
 
@@ -30,6 +31,11 @@ ATDCWeatherSystem::ATDCWeatherSystem()
 	Spray->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Spray->SetCastShadow(false);
 	Spray->SetCanEverAffectNavigation(false);
+
+	// The rain bed lives with the weather, not with the car, so it survives a
+	// car swap and follows the rain intensity directly.
+	RainAudio = CreateDefaultSubobject<UTDCRainAudioComponent>(TEXT("RainAudio"));
+	RainAudio->SetupAttachment(Root);
 
 	Random.Initialize(1337);
 }
@@ -66,6 +72,12 @@ void ATDCWeatherSystem::BeginPlay()
 	InitRain();
 	InitSpray();
 	RefreshWetness();
+
+	if (!bAudioEnabled && RainAudio)
+	{
+		RainAudio->Stop();
+	}
+
 	bInitialised = true;
 }
 
@@ -132,6 +144,16 @@ void ATDCWeatherSystem::Tick(float DeltaSeconds)
 		return;
 	}
 
+	// One lookup for spray, wetness and the rain bed.
+	if (!Car.IsValid())
+	{
+		for (TActorIterator<ATDCPlayerCar> It(GetWorld()); It; ++It)
+		{
+			Car = *It;
+			break;
+		}
+	}
+
 	TickRain(DeltaSeconds);
 	TickSpray(DeltaSeconds);
 
@@ -140,6 +162,31 @@ void ATDCWeatherSystem::Tick(float DeltaSeconds)
 	{
 		WetnessRefreshTimer = 0.0f;
 		RefreshWetness();
+	}
+
+	if (RainAudio)
+	{
+		RainAudio->SetRainIntensity(bAudioEnabled ? RainIntensity : 0.0f);
+		RainAudio->SetSpeed01(Car.IsValid() ? Car->GetSpeed01() : 0.0f);
+	}
+}
+
+void ATDCWeatherSystem::SetAudioEnabled(bool bEnabled)
+{
+	bAudioEnabled = bEnabled;
+
+	if (!RainAudio)
+	{
+		return;
+	}
+
+	if (bEnabled)
+	{
+		RainAudio->Start();
+	}
+	else
+	{
+		RainAudio->Stop();
 	}
 }
 
@@ -226,15 +273,6 @@ void ATDCWeatherSystem::TickSpray(float DeltaSeconds)
 
 	if (bWheelSpray)
 	{
-		if (!Car.IsValid())
-		{
-			for (TActorIterator<ATDCPlayerCar> It(GetWorld()); It; ++It)
-			{
-				Car = *It;
-				break;
-			}
-		}
-
 		if (Car.IsValid())
 		{
 			const float SpeedKmh = Car->GetAbsoluteSpeedKmh();

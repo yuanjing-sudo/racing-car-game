@@ -2,6 +2,7 @@
 
 #include "TDCHUD.h"
 #include "TDCGoldenHour.h"
+#include "TDCSkidMarkSystem.h"
 #include "TDCPlayerCar.h"
 #include "TDCWeatherSystem.h"
 #include "TDCWorldLandmarks.h"
@@ -50,5 +51,11 @@ void ATDCGameMode::BeginPlay()
 	{
 		UClass* Class = WeatherClass ? WeatherClass.Get() : ATDCWeatherSystem::StaticClass();
 		Weather = World->SpawnActor<ATDCWeatherSystem>(Class, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+	}
+
+	if (!UGameplayStatics::GetActorOfClass(World, ATDCSkidMarkSystem::StaticClass()))
+	{
+		UClass* Class = SkidMarkClass ? SkidMarkClass.Get() : ATDCSkidMarkSystem::StaticClass();
+		SkidMarks = World->SpawnActor<ATDCSkidMarkSystem>(Class, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
 	}
 }

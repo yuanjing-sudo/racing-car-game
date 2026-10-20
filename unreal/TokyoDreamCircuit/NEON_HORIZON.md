@@ -23,6 +23,8 @@ the end rather than faked.
 | Golden-hour sky, sun, fog, film grade | `ATDCGoldenHour` | `TDCGoldenHour.h/.cpp` |
 | Skyline, Tokyo Tower, Skytree, Fuji, Rainbow Bridge, torii | `ATDCWorldLandmarks` | `TDCWorldLandmarks.h/.cpp` |
 | Rain, wheel spray, grip wetness | `ATDCWeatherSystem` | `TDCWeatherSystem.h/.cpp` |
+| Rubber on the road | `ATDCSkidMarkSystem` | `TDCSkidMarkSystem.h/.cpp` |
+| Synthesised rain bed | `UTDCRainAudioComponent` | `TDCRainAudioComponent.h/.cpp` |
 | Zen HUD, drift score, landmark compass | `ATDCHUD` | `TDCHUD.h/.cpp` |
 | Photo Mode | `UTDCPhotoModeComponent`, `ATDCPhotoPawn` | `TDCPhotoModeComponent.h/.cpp`, `TDCPhotoPawn.h/.cpp` |
 
@@ -131,6 +133,31 @@ case.
 Wheel spray is a second pool of 340 puffs thrown from the rear wheels. The rate
 scales with speed, wetness and drift angle, so a slide throws a visible plume.
 
+### Rubber
+
+`ATDCSkidMarkSystem` keeps a fixed pool of 1500 instanced cubes. Each frame it
+reads the rear-wheel contact patches; when the rear slips more than 9° (or the
+combined slip exceeds 0.32) above 40 km/h, it writes a cube stretched between the
+wheel's last point and its current one, every 55 cm. Two continuous lines, not a
+string of dots. The pool covers about 800 m of sliding and then recycles oldest
+first. Rubber is permanent by default; `MarkLifeSeconds` clears it if you prefer.
+
+Instances rather than a procedural mesh on purpose: appending to a
+`UProceduralMeshComponent` reallocates and re-uploads the whole buffer, while a
+pool update touches one transform. Nothing here fades, because a real skid mark
+does not.
+
+### Rain sound
+
+`UTDCRainAudioComponent` synthesises the rain bed from noise: a low-passed body
+layer and a high-passed hiss layer, mixed by `HissMix`, with a level that follows
+`RainIntensity` and rises with speed. It is mono and non-spatial, like the engine
+audio, because rain surrounds the car. Photo Mode stops it with the engine, so a
+frozen frame is silent.
+
+This is a bed, not a simulation: no individual drops, no splashes, no rain on the
+roof. Those need samples or grain synthesis.
+
 Wetness drives `ATDCPlayerCar::Wetness` (grip, via the existing tyre model) and,
 if the road material declares them, three scalar parameters:
 
@@ -168,6 +195,8 @@ HUD swaps to a thirds grid, corner brackets, live lens readout and controls.
   single biggest visual upgrade available and needs to be authored in the editor.
 - **Rain is instanced geometry, not Niagara.** It reads well in motion and costs one
   batch update, but it has no splashes on the road, no ripples and no lens drops.
+- **Skid marks do not fade or deform.** They are flat instances lifted 2 cm over
+  the road, not decals projected onto it.
 - **No LUT grade, no lens dirt, no custom bloom kernel.** Those are assets.
 - **The skyline does not collide** with the car.
 - **Audio is synthesised** and has no rain or city layer yet; the weather system
@@ -180,6 +209,9 @@ HUD swaps to a thirds grid, corner brackets, live lens readout and controls.
 | Denser city | `SkylineBlocks` (220 → 400) |
 | Taller city | `SkylineBlocks` height range in `BuildSkyline` |
 | More rain | `RainIntensity`, `MaxDrops` |
+| Longer skid trails | `MaxSegments` on the skid mark actor |
+| Skid marks on the front too | `bFrontWheelsToo` |
+| Quieter rain | `MasterGain` on the rain audio component |
 | Cheaper rain | `MaxDrops`, `RainRadius` |
 | More neon lights | `NeonLightBudget` (18) |
 | No neon lights | `bNeonLights` |

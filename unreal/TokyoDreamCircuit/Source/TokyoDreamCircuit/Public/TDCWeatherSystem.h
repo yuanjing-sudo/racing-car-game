@@ -9,6 +9,7 @@ class ATDCPlayerCar;
 class ATDCProceduralRoad;
 class UInstancedStaticMeshComponent;
 class UMaterialInstanceDynamic;
+class UTDCRainAudioComponent;
 class USceneComponent;
 
 /**
@@ -50,6 +51,11 @@ public:
 	/** Re-apply rain intensity to grip and the road material now. */
 	UFUNCTION(BlueprintCallable, Category = "Weather")
 	void RefreshWetness();
+
+	/** Start or stop the synthesised rain bed. Photo Mode uses this so a frozen
+	 *  frame is also silent. */
+	UFUNCTION(BlueprintCallable, Category = "Weather")
+	void SetAudioEnabled(bool bEnabled);
 
 	/** 0 = dry, 1 = a wall of water. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather|Rain", meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -104,6 +110,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weather")
 	TObjectPtr<UInstancedStaticMeshComponent> Spray;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weather")
+	TObjectPtr<UTDCRainAudioComponent> RainAudio;
+
 private:
 	void InitRain();
 	void InitSpray();
@@ -139,4 +148,5 @@ private:
 	float SpawnAccumulator = 0.0f;
 	float WetnessRefreshTimer = 0.0f;
 	bool bInitialised = false;
+	bool bAudioEnabled = true;
 };

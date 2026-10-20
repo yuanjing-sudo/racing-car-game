@@ -320,6 +320,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Car|Telemetry")
 	float GetTyreSlip01() const { return TyreSlip01; }
 
+	/** World-space centre of a wheel's contact patch. 0 front left, 1 front
+	 *  right, 2 rear left, 3 rear right. Skid marks and spray use this. */
+	UFUNCTION(BlueprintPure, Category = "Car|Telemetry")
+	FVector GetWheelWorldLocation(int32 WheelIndex) const { return GetWheelContactLocation(WheelIndex); }
+
 	// ---------------------------------------------------------------------
 	// Input. Bound in SetupPlayerInputComponent; also callable from Blueprint
 	// so an AI driver can use the same interface.

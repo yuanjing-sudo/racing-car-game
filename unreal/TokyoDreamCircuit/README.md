@@ -45,6 +45,8 @@ Source/
     Public/TDCGoldenHour.h          sun, sky atmosphere, fog, film grade
     Public/TDCWorldLandmarks.h      Tokyo Tower, Skytree, Fuji, Rainbow Bridge, torii, skyline
     Public/TDCWeatherSystem.h       rain streaks, wheel spray, wet grip
+    Public/TDCSkidMarkSystem.h      pooled instanced skid marks from rear slip
+    Public/TDCRainAudioComponent.h  synthesised rain bed (AudioMixer)
     Public/TDCHUD.h                 Zen HUD, drift score, landmark compass
     Public/TDCPhotoPawn.h           free camera with a physical lens
     Public/TDCPhotoModeComponent.h  enter/exit Photo Mode, freeze world time
@@ -94,7 +96,10 @@ Two Unreal-specific notes:
 
 Particles are procedural too, but not Niagara: `ATDCWeatherSystem` draws rain
 streaks and wheel spray as instanced cubes, updated with one batch transform call
-per frame. That is a deliberate asset-free choice — a Niagara system is a `.uasset`
+per frame, and `ATDCSkidMarkSystem` writes a second pool of instances for the
+rubber the rear tyres leave. The rain bed is white noise through a low-pass and a
+high-pass in `UTDCRainAudioComponent`, so wet weather has a sound as well as a
+look. That is a deliberate asset-free choice — a Niagara system is a `.uasset`
 — and it means there is no editor step and nothing to license. The trade-off is
 honest: no road splashes, no ripples, no lens drops. `REALISM.md` says what a
 proper Niagara rain system would add.
@@ -118,6 +123,8 @@ Every number is in SI units (metres, m/s, newtons, kg); the conversion to Unreal
 | More forgiving slides | `Drift Assist Strength`, `Drift Assist Max Torque` |
 | Denser / taller city | `Skyline Blocks`, `Seed` on the world landmarks actor |
 | More rain | `Rain Intensity`, `Max Drops` on the weather actor |
+| Longer skid trails | `Max Segments` on the skid mark actor |
+| Quieter rain | `Master Gain` on the rain audio component |
 | Later sunset | `Sun Elevation Degrees` on the golden hour actor |
 
 `Wetness` is the interesting one: it blends dry grip toward `WetGrip`, so you can drive it from a weather system and watch cornering speed fall in real time.

@@ -5,6 +5,7 @@
 #include "TDCGameMode.generated.h"
 
 class ATDCGoldenHour;
+class ATDCSkidMarkSystem;
 class ATDCWeatherSystem;
 class ATDCWorldLandmarks;
 
@@ -43,6 +44,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Neon Horizon")
 	TSubclassOf<ATDCWeatherSystem> WeatherClass;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Neon Horizon")
+	TSubclassOf<ATDCSkidMarkSystem> SkidMarkClass;
+
 private:
 	UPROPERTY()
 	TObjectPtr<ATDCGoldenHour> GoldenHour;
@@ -52,4 +56,7 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<ATDCWeatherSystem> Weather;
+
+	UPROPERTY()
+	TObjectPtr<ATDCSkidMarkSystem> SkidMarks;
 };

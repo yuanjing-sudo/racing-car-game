@@ -4,8 +4,10 @@
 #include "TDCPlayerCar.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/InputComponent.h"
+#include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "TDCWeatherSystem.h"
 
 UTDCPhotoModeComponent::UTDCPhotoModeComponent()
 {
@@ -87,6 +89,12 @@ void UTDCPhotoModeComponent::EnterPhotoMode()
 		Car->SetAudioEnabled(false);
 	}
 
+	// The rain bed is not part of the car, so it needs its own mute.
+	for (TActorIterator<ATDCWeatherSystem> It(World); It; ++It)
+	{
+		It->SetAudioEnabled(false);
+	}
+
 	bActive = true;
 }
 
@@ -114,6 +122,14 @@ void UTDCPhotoModeComponent::ExitPhotoMode()
 			{
 				Car->SetAudioEnabled(true);
 			}
+		}
+	}
+
+	if (World)
+	{
+		for (TActorIterator<ATDCWeatherSystem> It(World); It; ++It)
+		{
+			It->SetAudioEnabled(true);
 		}
 	}
 
