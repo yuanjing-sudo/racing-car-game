@@ -138,12 +138,16 @@ they are already there:
   brake lights whose emission is enabled through whichever property the active
   render pipeline uses.
 
-The remaining gap is **skid marks**. Unity needs a decal projector (URP/HDRP
-Decal Projector, or the decals feature) or a ribbon mesh with its own ring buffer.
-A ribbon is the route that needs no extra package: keep a `MeshFilter` with a ring
-buffer of quads emitted at each rear contact patch while `TyreSlip01` is high,
-fading the oldest end through vertex colours, and re-upload each frame. That is
-roughly 150 lines and is the same design Godot and Unreal would need.
+**Skid marks** are `TDCSkidMarks`, and they use the ribbon route that needs no
+extra package: one `MeshFilter` with a ring buffer of 800 quads, a new one emitted
+every 0.55 m of rear slip above 40 km/h, each lifted 2 cm over the contact patch.
+The whole trail is one draw call; the mesh is dynamic and its bounds are set once
+to a box large enough for the circuit.
+
+What they are not: a decal. A quad is flat between its two contact points, so it
+cannot wrap a crest, and the oldest marks vanish when the buffer wraps after about
+440 m of sliding. There is no vertex-colour fade; rubber does not fade, so the
+oldest is simply overwritten.
 
 ## What this is not
 

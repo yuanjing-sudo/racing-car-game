@@ -68,6 +68,10 @@ public class TDCSceneBootstrap : MonoBehaviour
     [Tooltip("Build the tyre smoke, wet spray and brake lights.")]
     public bool fxEnabled = true;
 
+    [Tooltip("Build the pooled skid marks. Independent of fxEnabled, so you can keep " +
+             "the rubber without the smoke.")]
+    public bool skidMarksEnabled = true;
+
     [Header("Physics")]
     [Tooltip("Fixed physics step. 1/120 s keeps the tyre model stable at 300+ km/h.")]
     public float fixedTimeStep = 1f / 120f;
@@ -87,6 +91,9 @@ public class TDCSceneBootstrap : MonoBehaviour
     /// <summary>The particles and lights this bootstrap created.</summary>
     public TDCVehicleFX VehicleFX { get; private set; }
 
+    /// <summary>The pooled skid marks this bootstrap created.</summary>
+    public TDCSkidMarks SkidMarks { get; private set; }
+
     void Awake()
     {
         ConfigurePhysics();
@@ -96,6 +103,7 @@ public class TDCSceneBootstrap : MonoBehaviour
         BuildCamera();
         BuildAudio();
         BuildFx();
+        BuildSkidMarks();
     }
 
     [ContextMenu("Rebuild Scene")]
@@ -114,12 +122,15 @@ public class TDCSceneBootstrap : MonoBehaviour
         CameraRig = null;
         EngineAudio = null;
         VehicleFX = null;
+        SkidMarks = null;
 
         if (!Application.isPlaying)
         {
-            // The camera and the light are not children, so they are handled here.
+            // The camera, the light and the skid marks are roots, not children,
+            // so they are handled here.
             DestroyExisting("TDC Camera");
             DestroyExisting("TDC Moon");
+            DestroyExisting("TDC Skid Marks");
         }
 
         ConfigurePhysics();
@@ -129,6 +140,7 @@ public class TDCSceneBootstrap : MonoBehaviour
         BuildCamera();
         BuildAudio();
         BuildFx();
+        BuildSkidMarks();
     }
 
     void DestroyExisting(string objectName)
@@ -303,5 +315,21 @@ public class TDCSceneBootstrap : MonoBehaviour
         VehicleFX = fxObject.AddComponent<TDCVehicleFX>();
         VehicleFX.car = Car;
         VehicleFX.wetness = wetness;
+    }
+
+    void BuildSkidMarks()
+    {
+        if (!skidMarksEnabled) return;
+
+        DestroyExisting("TDC Skid Marks");
+
+        // A root object, deliberately not a child: the marks are anchored to the
+        // world, so moving the bootstrap must not drag them along. Vertices are
+        // written in world space and the transform stays at the origin.
+        var marksObject = new GameObject("TDC Skid Marks");
+        marksObject.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+
+        SkidMarks = marksObject.AddComponent<TDCSkidMarks>();
+        SkidMarks.car = Car;
     }
 }
