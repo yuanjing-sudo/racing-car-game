@@ -128,6 +128,7 @@ const GatherShader = {
     uniform float maxRadius;
     uniform float threshold;
     uniform float luminance;
+    uniform float samples;
     varying vec2 vUv;
 
     const int MAX_TAPS = 48;
@@ -168,7 +169,7 @@ const GatherShader = {
         float accept = step( 0.0, side );
         // In-focus samples are pulled in sharply so the focal plane stays crisp.
         float sCoC = abs( s.a );
-        float contrib = max( sCoC, step( abs( coc ) < 0.02, 1.0 ) );
+        float contrib = max( sCoC, 1.0 - step( 0.02, abs( coc ) ) );
         float w = accept * contrib;
         // Bright pixels bloom larger (bokeh discs are brighter than the scene).
         w *= 1.0 + smoothstep( threshold, threshold + 1.5, luma( s.rgb ) ) * luminance * 3.0;

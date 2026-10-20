@@ -48,7 +48,6 @@ const FULLSCREEN_VERT = /* glsl */ `
 `;
 
 const LENSFLARE_FRAG = /* glsl */ `
-  #define MAX_GHOSTS ${MAX_GHOSTS}
   #define PI 3.141592653589793
 
   uniform sampler2D tDiffuse;      // HDR scene (readBuffer)

@@ -297,7 +297,6 @@ export function createTraffic(opts = {}) {
   const works = [];
 
   const matrixScratch = new THREE.Matrix4();
-  const localScratch = new THREE.Matrix4();
   const quatScratch = new THREE.Quaternion();
   const eulerScratch = new THREE.Euler();
 
@@ -758,6 +757,7 @@ export function createTraffic(opts = {}) {
   /* ----------------------------------------------------------------- state -- */
 
   let elapsed = 0;
+  let disposed = false;
 
   // Place the cars on the opening frame before the first update.
   if (carMeshes) {
@@ -781,6 +781,7 @@ export function createTraffic(opts = {}) {
   /* --------------------------------------------------------------- runtime -- */
 
   function update(dt) {
+    if (disposed || !Number.isFinite(dt)) return;
     elapsed += dt;
     applyLampStates();
     updateCars(dt);
@@ -807,9 +808,13 @@ export function createTraffic(opts = {}) {
    * an opponent without spamming.
    */
   function collide(position, radius = 1.0, isAI = false) {
+    if (disposed || !position || !Number.isFinite(position.x) || !Number.isFinite(position.z)) return null;
     if (!cars.length) return null;
     for (const car of cars) {
       if (car.hitCooldown > 0) continue;
+      // Only compare cars on the same level: an overpass and the road under it
+      // occupy the same X/Z but must never trade a collision.
+      if (Number.isFinite(position.y) && Math.abs(position.y - car.position.y) > 2.2) continue;
       const dx = position.x - car.position.x;
       const dz = position.z - car.position.z;
       const sin = Math.sin(car.angle);
@@ -831,6 +836,7 @@ export function createTraffic(opts = {}) {
   }
 
   function reset() {
+    if (disposed) return;
     if (lampMesh) {
       for (const owner of crossings) owner.state = null;
       for (const owner of works) owner.state = null;
@@ -839,10 +845,18 @@ export function createTraffic(opts = {}) {
   }
 
   function dispose() {
+    if (disposed) return;
+    disposed = true;
     while (group.children.length) group.remove(group.children[0]);
     for (const d of disposables) { try { d.dispose(); } catch (e) { /* ignore */ } }
     disposables.length = 0;
     cars.length = 0;
+    lampRecords.length = 0;
+    lampMatrices.length = 0;
+    crossings.length = 0;
+    works.length = 0;
+    lampMesh = null;
+    carMeshes = null;
     stats.draws = 0;
     stats.tris = 0;
   }

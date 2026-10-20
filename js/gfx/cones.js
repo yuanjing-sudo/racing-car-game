@@ -189,7 +189,6 @@ export function createCones(opts = {}) {
   disposables.push(coneGeo, coneMat);
 
   const _dummy = new THREE.Object3D();
-  const _matrix = new THREE.Matrix4();
   const _quat = new THREE.Quaternion();
   const _euler = new THREE.Euler();
   const _vec = new THREE.Vector3();
@@ -305,7 +304,13 @@ export function createCones(opts = {}) {
     addCone(u, -(halfW + 0.55), (random() - 0.5) * 0.25);
   }
 
-  if (!cones.length) return empty;
+  if (!cones.length) {
+    // Nothing survived the gap filter; release the sign parts built above so a
+    // gap-heavy theme cannot leak geometry through the empty façade.
+    for (const g of signPoles) { try { g.dispose(); } catch (e) { /* ignore */ } }
+    for (const g of signPlates) { try { g.dispose(); } catch (e) { /* ignore */ } }
+    return empty;
+  }
 
   const coneMesh = new THREE.InstancedMesh(coneGeo, coneMat, cones.length);
   coneMesh.name = 'HazardCones';
@@ -374,6 +379,7 @@ export function createCones(opts = {}) {
   /* ------------------------------------------------------------- runtime ---- */
 
   let elapsed = 0;
+  let disposed = false;
   const _color = new THREE.Color();
 
   function knock(record, velocity) {
@@ -395,6 +401,7 @@ export function createCones(opts = {}) {
   }
 
   function update(dt) {
+    if (disposed || !Number.isFinite(dt)) return;
     elapsed += dt;
     let dirty = false;
 
@@ -453,6 +460,7 @@ export function createCones(opts = {}) {
    * cone inside the box is knocked away and returned.
    */
   function collide(position, radius = 0.9, velocity = null, heading = null) {
+    if (disposed || !position || !Number.isFinite(position.x) || !Number.isFinite(position.z)) return null;
     const useHeading = Number.isFinite(heading);
     const sin = useHeading ? Math.sin(heading) : 0;
     const cos = useHeading ? Math.cos(heading) : 1;
@@ -489,6 +497,7 @@ export function createCones(opts = {}) {
   }
 
   function reset() {
+    if (disposed) return;
     for (const record of cones) {
       record.active = true;
       record.pos.copy(record.base);
@@ -504,10 +513,16 @@ export function createCones(opts = {}) {
   }
 
   function dispose() {
+    if (disposed) return;
+    disposed = true;
     while (group.children.length) group.remove(group.children[0]);
     for (const d of disposables) { try { d.dispose(); } catch (e) { /* ignore */ } }
     disposables.length = 0;
     cones.length = 0;
+    signPoles.length = 0;
+    signPlates.length = 0;
+    beacons.length = 0;
+    beacons.mesh = null;
     stats.draws = 0;
     stats.tris = 0;
   }
