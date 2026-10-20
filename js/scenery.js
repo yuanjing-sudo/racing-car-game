@@ -23,9 +23,18 @@ export function createScenery(theme = 'alpine', seed = 42, trackCurve = null) {
     addTrees(scenery, theme, noise, trackCurve, seed);
   }
   addRocks(scenery, theme, noise, trackCurve, seed);
-  if (theme === 'city') addCityBuildings(scenery, trackCurve, seed);
+
+  // The coarse city lives in its own group so the game can hide it when the
+  // detailed gfx skyline is running. Two generators building in the same space
+  // interpenetrate: plain boxes poke through tower podiums and the lit window
+  // sheets end up inside the wrong facade. Named here, decided in main.js,
+  // because only the caller knows whether `js/gfx/skyline.js` came up.
+  const urban = new THREE.Group();
+  urban.name = 'legacy-urban';
+
+  if (theme === 'city') addCityBuildings(urban, trackCurve, seed);
   if (theme === 'tokyo') {
-    addCityBuildings(scenery, trackCurve, seed, {
+    addCityBuildings(urban, trackCurve, seed, {
       count: 190,
       baseHeight: 60,
       heightVar: 240,
@@ -34,12 +43,14 @@ export function createScenery(theme = 'alpine', seed = 42, trackCurve = null) {
       neonGain: 2.4,
       neonPalette: [0x00e5ff, 0xff2d95, 0xffd400, 0x7c4dff, 0x00ff9d, 0xff5a2a, 0xff1f6f],
     });
-    addTokyoSkyline(scenery, seed);
+    addTokyoSkyline(urban, seed);
     addTokyoTower(scenery);
     addMountFuji(scenery);
     addNeonSigns(scenery, trackCurve, seed);
     addTokyoRailway(scenery, trackCurve, noise, seed);
   }
+
+  if (urban.children.length) scenery.add(urban);
   if (theme === 'alpine') addSnowParticles(scenery, trackCurve);
   addGrassPatches(scenery, theme, noise, trackCurve, seed);
   addClouds(scenery, theme, seed);
@@ -334,30 +345,39 @@ function addCityBuildings(group, trackCurve, seed, opts = {}) {
     const depth = 10 + rng() * 26;
     const height = baseHeight + rng() * heightVar;
 
+    // The road-facing direction becomes the block's +Z, so the window sheet
+    // below lands on a real wall. Rotating the mass also stops the city reading
+    // as one world-axis grid laid over a curve.
+    const toTrack = normal.clone().multiplyScalar(-side);
+    const yaw = Math.atan2(toTrack.x, toTrack.z);
+
     // mass
     dummy.position.set(bx, height / 2, bz);
-    dummy.rotation.set(0, 0, 0);
+    dummy.rotation.set(0, yaw, 0);
     dummy.scale.set(width, height, depth);
     dummy.updateMatrix();
     masses.setMatrixAt(i, dummy.matrix);
     col.setHSL(0.56 + rng() * 0.2, 0.22, 0.13 + rng() * 0.18);
     masses.setColorAt(i, col);
 
-    // window sheet on the face pointing back toward the track
-    const toTrack = normal.clone().multiplyScalar(-side);
+    // Window sheet on the +Z face, which now points at the track. Before the
+    // mass was rotated, the sheet was offset by depth/2 along the *normal*,
+    // which is the X direction when the road runs north-south: half the sheets
+    // floated in the street and half were buried inside the block.
     dummy.position.set(
       bx + toTrack.x * (depth / 2 + 0.03),
       height * 0.5,
       bz + toTrack.z * (depth / 2 + 0.03)
     );
-    dummy.rotation.set(0, Math.atan2(toTrack.x, toTrack.z), 0);
+    dummy.rotation.set(0, yaw, 0);
     dummy.scale.set(width * 0.88, height * 0.82, 1);
     dummy.updateMatrix();
     windows.setMatrixAt(i, dummy.matrix);
 
-    // neon band near the crown
+    // Neon band near the crown, matched to the rotated mass so a non-square
+    // footprint does not hang over the street.
     dummy.position.set(bx, height + 1.2, bz);
-    dummy.rotation.set(0, 0, 0);
+    dummy.rotation.set(0, yaw, 0);
     dummy.scale.set(width * 0.9, 0.9, depth * 0.9);
     dummy.updateMatrix();
     neon.setMatrixAt(i, dummy.matrix);

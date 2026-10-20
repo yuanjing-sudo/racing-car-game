@@ -210,6 +210,23 @@ class Game {
     return 'low';
   }
 
+  /**
+   * Show or hide the coarse legacy city.
+   *
+   * `js/scenery.js` still builds the terrain, trees, Tokyo Tower, Fuji and the
+   * trackside detail. Its plain box blocks are a different matter: whenever
+   * `js/gfx/skyline.js` came up it builds detailed towers — podiums, setbacks,
+   * curtain walls, clutter and signage — in the same ring, and two cities in
+   * one place means boxes poking through facades. The legacy layer is named
+   * `legacy-urban` so this can be decided after setTheme has actually built
+   * the detailed one.
+   */
+  syncLegacyCity() {
+    const legacy = this.scenery && this.scenery.getObjectByName('legacy-urban');
+    if (!legacy) return;
+    legacy.visible = !(this.gfx && this.gfx.skyline);
+  }
+
   /** The per-frame context every graphics sub-system reads from. */
   graphicsContext() {
     const phys = this.playerPhysics;
@@ -363,6 +380,8 @@ class Game {
       });
     }
 
+    this.syncLegacyCity();
+
     this.coneHits = 0;
     this.trafficHits = 0;
     this.hazardCooldown = 0;
@@ -430,6 +449,8 @@ class Game {
         seed,
       });
     }
+
+    this.syncLegacyCity();
 
     this.race.reset();
     this.race.totalLaps = 999;
