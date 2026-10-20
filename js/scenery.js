@@ -38,6 +38,7 @@ export function createScenery(theme = 'alpine', seed = 42, trackCurve = null) {
     addTokyoTower(scenery);
     addMountFuji(scenery);
     addNeonSigns(scenery, trackCurve, seed);
+    addTokyoRailway(scenery, trackCurve, noise, seed);
   }
   if (theme === 'alpine') addSnowParticles(scenery, trackCurve);
   addGrassPatches(scenery, theme, noise, trackCurve, seed);
@@ -924,6 +925,312 @@ function addNeonSigns(group, trackCurve, seed) {
     board.rotation.y = Math.atan2(-normal.x * side, -normal.z * side);
     group.add(board);
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Elevated railway — the commuter line that threads between the towers.
+ *
+ * A concrete viaduct follows the outside of the circuit for a third of a
+ * lap, with pillars dropping onto the graded ground and a lit six-car
+ * train running along it.  The train is animated from `onBeforeRender` on
+ * the first deck section, so it needs no update hook in the game loop.
+ * ------------------------------------------------------------------ */
+function addTokyoRailway(group, trackCurve, noise, seed) {
+  const rng = seededRandom(seed + 1500);
+  const t0 = 0.54;
+  const t1 = 0.80;
+  const samples = 36;
+  const offset = 24 + rng() * 4;
+  const side = rng() < 0.5 ? 1 : -1;
+  const deckTop = 12.0 + rng() * 1.5; // metres above the road at that point
+
+  const deckPts = [];
+  const trainPts = [];
+  for (let i = 0; i <= samples; i++) {
+    const t = t0 + (t1 - t0) * (i / samples);
+    const p = trackCurve.getPointAt(t);
+    const tan = trackCurve.getTangentAt(t);
+    const n = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+    const x = p.x + n.x * offset * side;
+    const z = p.z + n.z * offset * side;
+    const top = p.y + deckTop;
+    deckPts.push(new THREE.Vector3(x, top - 0.5, z));
+    trainPts.push(new THREE.Vector3(x, top + 1.55, z));
+  }
+
+  const concreteMat = new THREE.MeshStandardMaterial({
+    color: 0x767b83,
+    roughness: 0.88,
+    metalness: 0.08,
+  });
+  const parapetMat = new THREE.MeshStandardMaterial({
+    color: 0x5d626a,
+    roughness: 0.9,
+    metalness: 0.05,
+  });
+  const railMat = new THREE.MeshStandardMaterial({
+    color: 0x2c3038,
+    roughness: 0.45,
+    metalness: 0.85,
+  });
+  const pillarMat = new THREE.MeshStandardMaterial({
+    color: 0x646972,
+    roughness: 0.92,
+    metalness: 0.05,
+  });
+
+  const dummy = new THREE.Object3D();
+
+  // --- deck, parapets and rails (three instanced draws) -------------
+  const deck = new THREE.InstancedMesh(new THREE.BoxGeometry(5.4, 1.0, 1), concreteMat, samples);
+  const parapets = new THREE.InstancedMesh(new THREE.BoxGeometry(0.28, 0.95, 1), parapetMat, samples * 2);
+  const rails = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.14, 1), railMat, samples * 2);
+  deck.castShadow = true;
+  deck.receiveShadow = true;
+  parapets.castShadow = false;
+  deck.name = 'TokyoRailwayDeck';
+
+  let pi = 0;
+  let ri = 0;
+  for (let i = 0; i < samples; i++) {
+    const a = deckPts[i];
+    const b = deckPts[i + 1];
+    const mx = (a.x + b.x) * 0.5;
+    const mz = (a.z + b.z) * 0.5;
+    const my = (a.y + b.y) * 0.5;
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dz) + 0.3;
+    const yaw = Math.atan2(dx, dz);
+    const nx = Math.cos(yaw);
+    const nz = -Math.sin(yaw);
+
+    dummy.position.set(mx, my, mz);
+    dummy.rotation.set(0, yaw, 0);
+    dummy.scale.set(1, 1, len);
+    dummy.updateMatrix();
+    deck.setMatrixAt(i, dummy.matrix);
+
+    for (const lateral of [-2.72, 2.72]) {
+      dummy.position.set(mx + nx * lateral, my + 0.95, mz + nz * lateral);
+      dummy.rotation.set(0, yaw, 0);
+      dummy.scale.set(1, 1, len);
+      dummy.updateMatrix();
+      parapets.setMatrixAt(pi++, dummy.matrix);
+    }
+    for (const lateral of [-1.35, 1.35]) {
+      dummy.position.set(mx + nx * lateral, my + 0.57, mz + nz * lateral);
+      dummy.rotation.set(0, yaw, 0);
+      dummy.scale.set(1, 1, len);
+      dummy.updateMatrix();
+      rails.setMatrixAt(ri++, dummy.matrix);
+    }
+  }
+  deck.instanceMatrix.needsUpdate = true;
+  parapets.instanceMatrix.needsUpdate = true;
+  rails.instanceMatrix.needsUpdate = true;
+  group.add(deck, parapets, rails);
+
+  // --- pillars -------------------------------------------------------
+  const pillarCount = Math.floor(samples / 3) + 1;
+  const pillars = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(1.05, 1.35, 1, 8),
+    pillarMat,
+    pillarCount,
+  );
+  pillars.castShadow = true;
+  pillars.receiveShadow = true;
+  let pj = 0;
+  for (let i = 0; i <= samples; i += 3) {
+    const p = deckPts[i];
+    const ground = getGradedTerrainHeight(p.x, p.z, 'tokyo', noise, trackCurve);
+    const h = Math.max(2, (p.y - 0.5) - ground);
+    dummy.position.set(p.x, ground + h / 2, p.z);
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.set(1, h, 1);
+    dummy.updateMatrix();
+    pillars.setMatrixAt(pj++, dummy.matrix);
+  }
+  pillars.count = pj;
+  pillars.instanceMatrix.needsUpdate = true;
+  group.add(pillars);
+
+  // --- catenary masts ------------------------------------------------
+  const mastMat = new THREE.MeshStandardMaterial({ color: 0x454a52, roughness: 0.6, metalness: 0.7 });
+  for (let i = 4; i < samples; i += 7) {
+    const p = deckPts[i];
+    const next = deckPts[Math.min(i + 1, samples)];
+    const yaw = Math.atan2(next.x - p.x, next.z - p.z);
+    const nx = Math.cos(yaw);
+    const nz = -Math.sin(yaw);
+    const mast = new THREE.Mesh(new THREE.BoxGeometry(0.16, 6.6, 0.16), mastMat);
+    mast.position.set(p.x + nx * 3.1, p.y + 3.2, p.z + nz * 3.1);
+    group.add(mast);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.12, 0.12), mastMat);
+    arm.position.set(p.x + nx * 0.05, p.y + 6.35, p.z + nz * 0.05);
+    arm.rotation.y = yaw + Math.PI / 2;
+    group.add(arm);
+  }
+
+  // --- the train -----------------------------------------------------
+  const trainCurve = new THREE.CatmullRomCurve3(trainPts, false, 'catmullrom', 0.5);
+  const trainLength = trainCurve.getLength();
+  const carLength = 18.6;
+  const carGap = 1.1;
+  const carStep = (carLength + carGap) / trainLength;
+
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0xd7dde6,
+    roughness: 0.36,
+    metalness: 0.55,
+  });
+  const roofMat = new THREE.MeshStandardMaterial({
+    color: 0xaeb6c1,
+    roughness: 0.5,
+    metalness: 0.6,
+  });
+  const underMat = new THREE.MeshStandardMaterial({
+    color: 0x22262d,
+    roughness: 0.7,
+    metalness: 0.4,
+  });
+  const stripeMat = new THREE.MeshBasicMaterial({ color: 0x3bd6a0, toneMapped: false });
+  stripeMat.color.setScalar(1.35);
+  const headMat = new THREE.MeshBasicMaterial({ color: 0xfff4d6, toneMapped: false });
+  headMat.color.setScalar(2.4);
+  const tailMat = new THREE.MeshBasicMaterial({ color: 0xff2a2a, toneMapped: false });
+  tailMat.color.setScalar(2.0);
+
+  const bodyGeo = new THREE.BoxGeometry(2.9, 2.75, carLength);
+  const roofGeo = new THREE.BoxGeometry(2.55, 0.34, carLength - 0.35);
+  const underGeo = new THREE.BoxGeometry(2.55, 0.55, carLength - 1.4);
+  const bogieGeo = new THREE.BoxGeometry(1.9, 0.55, 2.4);
+  const windowGeo = new THREE.PlaneGeometry(carLength - 1.5, 1.15);
+  const stripeGeo = new THREE.PlaneGeometry(carLength - 1.5, 0.2);
+  const lampGeo = new THREE.BoxGeometry(0.42, 0.24, 0.1);
+
+  const windowsMat = new THREE.MeshBasicMaterial({
+    map: makeTrainWindowTexture(),
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  });
+
+  const cars = [];
+  for (let i = 0; i < 6; i++) {
+    const car = new THREE.Group();
+    car.name = `TokyoRailwayCar${i}`;
+
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0;
+    body.castShadow = true;
+    body.receiveShadow = true;
+    car.add(body);
+
+    const roof = new THREE.Mesh(roofGeo, roofMat);
+    roof.position.y = 1.5;
+    car.add(roof);
+
+    const under = new THREE.Mesh(underGeo, underMat);
+    under.position.y = -1.55;
+    car.add(under);
+
+    for (const z of [-carLength * 0.31, carLength * 0.31]) {
+      const bogie = new THREE.Mesh(bogieGeo, underMat);
+      bogie.position.set(0, -1.75, z);
+      bogie.castShadow = true;
+      car.add(bogie);
+    }
+
+    for (const s of [-1, 1]) {
+      const windows = new THREE.Mesh(windowGeo, windowsMat);
+      windows.position.set(s * 1.47, 0.38, 0);
+      windows.rotation.y = s * Math.PI / 2;
+      car.add(windows);
+
+      const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+      stripe.position.set(s * 1.472, -0.58, 0);
+      stripe.rotation.y = s * Math.PI / 2;
+      car.add(stripe);
+    }
+
+    for (const x of [-0.82, 0.82]) {
+      const head = new THREE.Mesh(lampGeo, headMat);
+      head.position.set(x, -0.55, carLength * 0.5 + 0.06);
+      car.add(head);
+      const tail = new THREE.Mesh(lampGeo, tailMat);
+      tail.position.set(x, -0.62, -carLength * 0.5 - 0.06);
+      car.add(tail);
+    }
+
+    // A folded pantograph on the leading car, just enough to read at speed.
+    if (i === 0) {
+      const armMat = new THREE.MeshStandardMaterial({ color: 0x3a3f47, roughness: 0.5, metalness: 0.8 });
+      const armA = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.7, 0.09), armMat);
+      armA.position.set(0, 2.5, -2.2);
+      armA.rotation.x = 0.55;
+      car.add(armA);
+      const armB = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.4, 0.09), armMat);
+      armB.position.set(0, 3.35, -1.25);
+      armB.rotation.x = -0.7;
+      car.add(armB);
+    }
+
+    car.frustumCulled = false;
+    car.visible = false;
+    cars.push(car);
+    group.add(car);
+  }
+
+  const clock = new THREE.Clock();
+  const passSeconds = 34;
+  const gapSeconds = 9;
+  const cycleSeconds = passSeconds + gapSeconds;
+
+  function updateTrain() {
+    const cycle = clock.getElapsedTime() % cycleSeconds;
+    const u = cycle < passSeconds ? (cycle / passSeconds) * 1.2 - 0.1 : -2;
+    for (let i = 0; i < cars.length; i++) {
+      const cu = u - i * carStep;
+      const on = cu >= 0 && cu <= 1;
+      cars[i].visible = on;
+      if (!on) continue;
+      const p = trainCurve.getPointAt(cu);
+      const tan = trainCurve.getTangentAt(cu);
+      cars[i].position.copy(p);
+      cars[i].rotation.set(0, Math.atan2(tan.x, tan.z), 0);
+    }
+    group.updateMatrixWorld(true);
+  }
+
+  // The first deck section is the ticker: it is rendered whenever the
+  // viaduct is on screen, which is exactly when the train can be seen.
+  deck.onBeforeRender = updateTrain;
+  updateTrain();
+}
+
+function makeTrainWindowTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#0b0e15';
+  ctx.fillRect(0, 0, 256, 64);
+
+  for (let i = 0; i < 8; i++) {
+    const x = 8 + i * 31;
+    const warm = i % 4 === 0;
+    ctx.fillStyle = warm ? '#ffe7ba' : '#d4e8ff';
+    ctx.fillRect(x, 14, 21, 32);
+    ctx.fillStyle = 'rgba(4, 7, 12, 0.55)';
+    ctx.fillRect(x + 10, 14, 1.5, 32);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.repeat.set(3, 1);
+  tex.needsUpdate = true;
+  return tex;
 }
 
 function seededRandom(seed) {
