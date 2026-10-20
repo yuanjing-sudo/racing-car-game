@@ -50,10 +50,10 @@ function lapDistance(a, b) {
 
 /** Light plan per quality. `crossings` only applies to urban themes. */
 const PLAN = {
-  low: { crossings: 2, cars: 3, works: 1 },
-  medium: { crossings: 3, cars: 4, works: 2 },
-  high: { crossings: 4, cars: 6, works: 2 },
-  ultra: { crossings: 5, cars: 8, works: 3 },
+  low: { crossings: 3, cars: 4, works: 2 },
+  medium: { crossings: 4, cars: 5, works: 2 },
+  high: { crossings: 5, cars: 7, works: 2 },
+  ultra: { crossings: 5, cars: 9, works: 3 },
 };
 
 const CYCLE = 18;

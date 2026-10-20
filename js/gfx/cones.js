@@ -43,10 +43,10 @@ function isInGap(t, gaps) {
 }
 
 const ZONE_PLAN = {
-  low: { zones: 2 },
-  medium: { zones: 3 },
-  high: { zones: 4 },
-  ultra: { zones: 5 },
+  low: { zones: 3 },
+  medium: { zones: 4 },
+  high: { zones: 5 },
+  ultra: { zones: 6 },
 };
 
 const CONE_GROUND_OFFSET = 0.02;
